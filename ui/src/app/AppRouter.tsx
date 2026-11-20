@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
 import { LoginPage } from '../features/auth/LoginPage';
+import { ProjetosPage } from '../features/projetos/ProjetosPage';
 import { AdminRoute, PrivateRoute } from './RouteGuards';
 
 function PlaceholderPage({
@@ -63,15 +64,7 @@ export function AppRouter() {
                 />
               }
             />
-            <Route
-              path="/projetos"
-              element={
-                <PlaceholderPage
-                  title="Projetos"
-                  description="Gestão de projetos e vínculos de usuários."
-                />
-              }
-            />
+            <Route path="/projetos" element={<ProjetosPage />} />
             <Route
               path="/usuarios"
               element={
