@@ -49,16 +49,17 @@ Esta fundação garante padronização de código, segurança de tipos para toda
 
 ## 3. Escopo e Entregáveis Detalhados
 
-### 3.1 Inicialização e Tooling
+### 3.1 Inicialização, Variant Vite + React e Tooling
 
-- Inicializar aplicação React + TypeScript (Vite) na raiz do projeto (ou diretório acordado).
+- Inicializar a aplicação utilizando **Vite como variant do React com TypeScript** (`npm create vite@latest . -- --template react-ts`).
 - Habilitar no `tsconfig.json`:
   - `"strict": true`
   - `"noUncheckedIndexedAccess": true`
   - `"noImplicitReturns": true`
   - `"noFallthroughCasesInSwitch": true`
-- Configurar linting e formatação (ESLint + Prettier) e script de verificação de tipos (`tsc --noEmit`).
-- Configurar framework de testes unitários/componentes (ex.: Vitest + React Testing Library) para validar cálculos de horas, formatação CSV e regras de UI.
+- Configurar linting e formatação (ESLint + Prettier) e scripts padronizados no `package.json` conforme `AGENTS.md`:
+  - `dev`, `build`, `preview`, `typecheck` (`tsc --noEmit`), `lint`, `test` e `test:coverage`.
+- Configurar framework de testes unitários e de interface (**Vitest + React Testing Library + `@vitest/coverage-v8`**) com **meta mínima de 90% de cobertura para código de UI** (thresholds configurados no `vite.config.ts`/`vitest.config.ts` para lines, functions, branches e statements).
 
 ### 3.2 Estrutura Modular Recomendada
 
@@ -109,21 +110,25 @@ Criar tipos TypeScript estritos em `src/types/domain.ts` espelhando as 5 entidad
   - `AdminRoute`: exige perfil `admin`, redirecionando `worker` para a tela principal com feedback discreto.
 - Infraestrutura de feedback visual padronizada (toasts/alertas de sucesso/erro, estados de *loading*, *empty states*).
 
-### 3.6 Configuração de Deploy na Vercel (`RNF01`)
+### 3.6 Configuração de Deploy e Analytics na Vercel (`RNF01`)
 
 - Criar arquivo `vercel.json` com rewrite para SPA (`"source": "/(.*)", "destination": "/index.html"`) evitando erro 404 ao recarregar rotas protegidas.
+- Instalar e configurar o **Vercel Web Analytics** (`@vercel/analytics`), renderizando o componente `<Analytics />` na raiz da aplicação React (`src/main.tsx` ou `src/App.tsx`) e habilitando Web Analytics no projeto na Vercel.
 - Validar build de produção (`npm run build`) e publicação na Vercel com HTTPS habilitado e variáveis de ambiente configuradas no painel da Vercel.
 
 ---
 
 ## 4. Critérios de Aceite
 
-- [ ] Projeto React + TypeScript inicializado com `strict: true` e `npm run build` / `tsc --noEmit` passando sem erros ou warnings de tipagem `any` implícito.
+- [ ] Projeto inicializado com **Vite (template/variant `react-ts`)** com `strict: true` e `npm run build`, `npm run typecheck` e `npm run lint` passando sem erros ou warnings de tipagem `any` implícito.
+- [ ] Scripts padronizados (`dev`, `build`, `preview`, `typecheck`, `lint`, `test`, `test:coverage`) configurados no `package.json` conforme `AGENTS.md`.
+- [ ] Vitest + React Testing Library configurados com **threshold mínimo de 90% de cobertura de testes de UI** validado por `npm run test:coverage`.
 - [ ] Todas as 5 entidades de domínio (`perfis`, `usuarios`, `projetos`, `usuario_projetos`, `registros_ponto`) possuem interfaces/tipos TypeScript estritos definidos.
 - [ ] Cliente Supabase configurado lendo `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com `.env.example` versionado e `.env` mantido no `.gitignore`.
 - [ ] Guards de rota (`PrivateRoute` e `AdminRoute`) e `AppLayout` responsivo implementados e funcionais em viewports mobile (`375px`) e desktop (`1280px+`).
+- [ ] **Vercel Analytics** (`@vercel/analytics`) integrado na raiz da aplicação e habilitado no projeto na Vercel.
 - [ ] `vercel.json` configurado para roteamento SPA e deploy funcional na Vercel acessível via HTTPS.
-- [ ] Utilitários base de formatação de data/hora (conversão de timestamps ISO UTC para fuso horário local e cálculo de duração em `HH:MM:SS` / `HH:MM`) cobertos por testes unitários.
+- [ ] Utilitários base de formatação de data/hora (conversão de timestamps ISO UTC para fuso horário local e cálculo de duração em `HH:MM:SS` / `HH:MM`) e componentes base de UI cobertos por testes atingindo ≥ 90% de cobertura.
 
 ---
 
