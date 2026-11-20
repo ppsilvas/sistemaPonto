@@ -14,6 +14,18 @@ describe('getSupabaseEnv', () => {
     });
   });
 
+  it('aceita VITE_SUPABASE_PUBLISHABLE_KEY como fallback de chave pública', () => {
+    const result = getSupabaseEnv({
+      VITE_SUPABASE_URL: 'https://exemplo.supabase.co',
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_123',
+    });
+
+    expect(result).toEqual({
+      url: 'https://exemplo.supabase.co',
+      anonKey: 'sb_publishable_123',
+    });
+  });
+
   it('remove espaços extras das variáveis', () => {
     const result = getSupabaseEnv({
       VITE_SUPABASE_URL: '  https://exemplo.supabase.co  ',
@@ -23,6 +35,18 @@ describe('getSupabaseEnv', () => {
     expect(result).toEqual({
       url: 'https://exemplo.supabase.co',
       anonKey: 'anon-key-123',
+    });
+  });
+
+  it('aceita VITE_SUPABASE_PUBLISHABLE_KEY como fallback de chave pública', () => {
+    const result = getSupabaseEnv({
+      VITE_SUPABASE_URL: 'https://exemplo.supabase.co',
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_123',
+    });
+
+    expect(result).toEqual({
+      url: 'https://exemplo.supabase.co',
+      anonKey: 'sb_publishable_123',
     });
   });
 

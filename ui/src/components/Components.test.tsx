@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Badge } from './Badge';
 import { Button } from './Button';
+import { ErrorBoundary } from './ErrorBoundary';
 import { EmptyState, LoadingState } from './FeedbackStates';
 import { Input } from './Input';
 import { Modal } from './Modal';
@@ -151,5 +152,24 @@ describe('Componentes base de UI', () => {
     expect(() => render(<ToastTrigger />)).toThrow(
       /useToast deve ser usado dentro de ToastProvider/,
     );
+  });
+
+  it('captura erros de renderização no ErrorBoundary sem deixar tela em branco', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    function BrokenChild(): never {
+      throw new Error('Falha inesperada de teste');
+    }
+
+    render(
+      <ErrorBoundary>
+        <BrokenChild />
+      </ErrorBoundary>,
+    );
+
+    expect(
+      screen.getByRole('heading', { name: 'Erro ao carregar a aplicação' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Falha inesperada de teste')).toBeInTheDocument();
+    consoleSpy.mockRestore();
   });
 });

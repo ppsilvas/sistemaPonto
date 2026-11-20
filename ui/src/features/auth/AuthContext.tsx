@@ -44,6 +44,7 @@ export function AuthProvider({
   const [isLoading, setIsLoading] = useState<boolean>(
     initialLoading ?? !isControlled,
   );
+  const [configError, setConfigError] = useState<string | null>(null);
 
   const getClient = useCallback(
     () => supabaseClient ?? getSupabaseClient(),
@@ -56,7 +57,19 @@ export function AuthProvider({
     }
 
     let active = true;
-    const client = getClient();
+    let client: SupabaseClient;
+
+    try {
+      client = getClient();
+    } catch (error) {
+      setConfigError(
+        error instanceof Error
+          ? error.message
+          : 'Erro de configuração do Supabase.',
+      );
+      setIsLoading(false);
+      return undefined;
+    }
 
     const hydrateSession = async () => {
       try {
@@ -135,6 +148,17 @@ export function AuthProvider({
     }
     setUser(null);
   }, [getClient, isControlled, onSignOut]);
+
+  if (configError) {
+    return (
+      <main className="login-page">
+        <section className="card login-card" role="alert">
+          <h1>Configuração incompleta</h1>
+          <p className="alert-error">{configError}</p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <AuthContext.Provider value={{ user, isLoading, signIn, signOut, setUser }}>
