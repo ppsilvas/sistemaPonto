@@ -14,5 +14,6 @@ ui/coverage
 ui/.vercel
 .vite
 ui/.vite
+supabase/.temp
 .agents/*
 !.agents/skills/
