@@ -12,7 +12,7 @@ coverage
 ui/coverage
 .vercel
 ui/.vercel
+.vite
+ui/.vite
 .agents/*
 !.agents/skills/
-!.agents/hooks.json
-!.agents/hooks/
