@@ -10,6 +10,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from '../../lib/supabase';
 import type { Usuario } from '../../types/domain';
 import {
+  AuthServiceError,
+  changeOwnPassword,
   fetchUserProfile,
   signInWithEmailAndPassword,
 } from './authService';
@@ -19,6 +21,7 @@ export interface AuthContextValue {
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<Usuario>;
   signOut: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   setUser: (user: Usuario | null) => void;
 }
 
@@ -29,6 +32,10 @@ export interface AuthProviderProps {
   initialUser?: Usuario | null;
   initialLoading?: boolean;
   onSignOut?: () => Promise<void> | void;
+  onChangePassword?: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<void>;
   supabaseClient?: SupabaseClient;
 }
 
@@ -37,6 +44,7 @@ export function AuthProvider({
   initialUser,
   initialLoading,
   onSignOut,
+  onChangePassword,
   supabaseClient,
 }: AuthProviderProps) {
   const isControlled = initialUser !== undefined || initialLoading !== undefined;
@@ -149,6 +157,24 @@ export function AuthProvider({
     setUser(null);
   }, [getClient, isControlled, onSignOut]);
 
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      if (onChangePassword) {
+        await onChangePassword(currentPassword, newPassword);
+        return;
+      }
+      if (!user) {
+        throw new AuthServiceError(
+          'SESSION_EXPIRED',
+          'Sua sessão expirou. Faça login novamente.',
+        );
+      }
+      const client = getClient();
+      await changeOwnPassword(client, user.email, currentPassword, newPassword);
+    },
+    [getClient, onChangePassword, user],
+  );
+
   if (configError) {
     return (
       <main className="login-page">
@@ -161,7 +187,9 @@ export function AuthProvider({
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signOut, setUser }}>
+    <AuthContext.Provider
+      value={{ user, isLoading, signIn, signOut, changePassword, setUser }}
+    >
       {children}
     </AuthContext.Provider>
   );
