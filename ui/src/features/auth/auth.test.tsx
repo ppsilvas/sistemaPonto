@@ -274,5 +274,12 @@ describe('LoginPage e AuthProvider com Supabase mockado', () => {
         screen.getByRole('heading', { name: 'Entrar no Ponto Lelê' }),
       ).toBeInTheDocument();
     });
+
+    triggerAuthChange('TOKEN_REFRESHED', { user: { id: 'u-1' } });
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Registrar Ponto' }),
+      ).toBeInTheDocument();
+    });
   });
 });

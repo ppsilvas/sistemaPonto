@@ -32,7 +32,10 @@ const mockUsers = [
     inativado_em: '2026-11-20T13:00:00.000Z',
     criado_em: '2026-11-20T11:00:00.000Z',
     perfis: [{ nome: 'worker' }],
-    usuario_projetos: [],
+    usuario_projetos: [
+      { projetos: null },
+      { projetos: [{ id: 'proj-2', nome: 'Projeto Beta' }] },
+    ],
   },
 ];
 
@@ -254,6 +257,12 @@ describe('UsuariosPage', () => {
     await user.click(screen.getByRole('button', { name: 'Copiar' }));
     expect(writeText).toHaveBeenCalledTimes(1);
 
+    await user.selectOptions(
+      screen.getByLabelText('Perfil', { selector: '#usuario-perfil-select' }),
+      'admin',
+    );
+    await user.click(screen.getByLabelText('Projeto Alpha'));
+    await user.click(screen.getByLabelText('Projeto Alpha'));
     await user.click(screen.getByLabelText('Projeto Alpha'));
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
@@ -308,5 +317,6 @@ describe('UsuariosPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Falha ao criar')).toBeInTheDocument();
     });
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
   });
 });
