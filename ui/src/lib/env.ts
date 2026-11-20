@@ -5,14 +5,18 @@ export interface SupabaseEnv {
 
 type EnvRecord = Record<string, string | boolean | undefined>;
 
+function readString(value: string | boolean | undefined): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export function getSupabaseEnv(
   envSource: EnvRecord = import.meta.env as unknown as EnvRecord,
 ): SupabaseEnv {
-  const rawUrl = envSource.VITE_SUPABASE_URL;
-  const rawAnonKey = envSource.VITE_SUPABASE_ANON_KEY;
-
-  const url = typeof rawUrl === 'string' ? rawUrl.trim() : '';
-  const anonKey = typeof rawAnonKey === 'string' ? rawAnonKey.trim() : '';
+  const url = readString(envSource.VITE_SUPABASE_URL);
+  const anonKey =
+    readString(envSource.VITE_SUPABASE_ANON_KEY) ||
+    readString(envSource.VITE_SUPABASE_PUBLISHABLE_KEY) ||
+    readString(envSource.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY);
 
   const missing: string[] = [];
   if (!url) {

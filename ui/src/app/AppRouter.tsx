@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
+import { LoginPage } from '../features/auth/LoginPage';
 import { AdminRoute, PrivateRoute } from './RouteGuards';
 
 function PlaceholderPage({
@@ -20,15 +21,7 @@ function PlaceholderPage({
 export function AppRouter() {
   return (
     <Routes>
-      <Route
-        path="/login"
-        element={
-          <PlaceholderPage
-            title="Entrar no Ponto Lelê"
-            description="Tela de autenticação será implementada em UC-01."
-          />
-        }
-      />
+      <Route path="/login" element={<LoginPage />} />
 
       <Route element={<PrivateRoute />}>
         <Route element={<AppLayout />}>
