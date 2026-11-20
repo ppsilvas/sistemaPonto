@@ -106,7 +106,7 @@ export async function listSessoesAbertasNoProjeto(
 ): Promise<string[]> {
   const { data, error } = await client
     .from('registros_ponto')
-    .select('id, usuarios(nome)')
+    .select('id, usuarios!registros_ponto_usuario_id_fkey(nome)')
     .eq('projeto_id', projetoId)
     .is('horario_saida', null)
     .is('excluido_em', null);
