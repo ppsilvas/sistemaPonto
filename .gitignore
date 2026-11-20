@@ -1,3 +1,5 @@
 .env
 .agents/*
 !.agents/skills/
+!.agents/hooks.json
+!.agents/hooks/
