@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Copy, KeyRound, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { EmptyState, LoadingState } from '../../components/FeedbackStates';
@@ -16,11 +17,14 @@ import { useToast } from '../../components/ToastContext';
 import { formatUtcToLocalDateTime } from '../../lib/dateTime';
 import { getSupabaseClient } from '../../lib/supabase';
 import type { PerfilNome, Projeto } from '../../types/domain';
+import { useAuth } from '../auth/AuthContext';
 import {
   createUsuario,
   generateStrongPassword,
+  hasOpenSessionForUser,
   listProjetosAtivos,
   listUsuarios,
+  updateUsuario,
   type UsuarioListItem,
 } from './usuariosService';
 
@@ -35,6 +39,9 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
   const { showToast } = useToast();
+  const { user: currentUser, setUser: setCurrentUser } = useAuth();
+  const navigate = useNavigate();
+
   const getClient = useCallback(
     () => supabaseClient ?? getSupabaseClient(),
     [supabaseClient],
@@ -60,6 +67,24 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
     password?: string;
   }>({});
   const [isSaving, setIsSaving] = useState(false);
+
+  const [editingUser, setEditingUser] = useState<UsuarioListItem | null>(null);
+  const [editNome, setEditNome] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPerfil, setEditPerfil] = useState<PerfilNome>('worker');
+  const [editAtivo, setEditAtivo] = useState(true);
+  const [editErrors, setEditErrors] = useState<{
+    nome?: string;
+    email?: string;
+  }>({});
+  const [confirmSelfDemotion, setConfirmSelfDemotion] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const [toggleTarget, setToggleTarget] = useState<UsuarioListItem | null>(
+    null,
+  );
+  const [toggleHasOpenSession, setToggleHasOpenSession] = useState(false);
+  const [isToggling, setIsToggling] = useState(false);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -88,6 +113,23 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
     void loadData();
   }, [loadData]);
 
+  const activeAdminCount = useMemo(
+    () =>
+      usuarios.filter((u) => u.ativo && u.perfil === 'admin').length,
+    [usuarios],
+  );
+
+  const isLastActiveAdmin = useCallback(
+    (usuario: UsuarioListItem | null) =>
+      Boolean(
+        usuario &&
+          usuario.ativo &&
+          usuario.perfil === 'admin' &&
+          activeAdminCount <= 1,
+      ),
+    [activeAdminCount],
+  );
+
   const filteredUsuarios = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     return usuarios.filter((usuario) => {
@@ -112,6 +154,16 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
     setSelectedProjetos([]);
     setFormErrors({});
     setIsCreateOpen(true);
+  };
+
+  const openEditModal = (usuario: UsuarioListItem) => {
+    setEditingUser(usuario);
+    setEditNome(usuario.nome);
+    setEditEmail(usuario.email);
+    setEditPerfil(usuario.perfil);
+    setEditAtivo(usuario.ativo);
+    setEditErrors({});
+    setConfirmSelfDemotion(false);
   };
 
   const toggleProjeto = (projetoId: string) => {
@@ -181,6 +233,128 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
       setIsSaving(false);
     }
   };
+
+  const handleEditSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingUser) return;
+
+    const errors: { nome?: string; email?: string } = {};
+    if (!editNome.trim()) {
+      errors.nome = 'O nome completo é obrigatório.';
+    }
+    if (!editEmail.trim() || !EMAIL_REGEX.test(editEmail.trim())) {
+      errors.email = 'Informe um e-mail válido.';
+    }
+
+    if (errors.nome || errors.email) {
+      setEditErrors(errors);
+      return;
+    }
+
+    const isSelfDemoting =
+      currentUser?.id === editingUser.id &&
+      editingUser.perfil === 'admin' &&
+      editPerfil === 'worker';
+
+    if (isSelfDemoting && !confirmSelfDemotion) {
+      setConfirmSelfDemotion(true);
+      return;
+    }
+
+    setEditErrors({});
+    setIsUpdating(true);
+    try {
+      const updated = await updateUsuario(getClient(), {
+        userId: editingUser.id,
+        nome: editNome,
+        email: editEmail,
+        perfil: editPerfil,
+        ativo: editAtivo,
+      });
+      showToast({
+        type: 'success',
+        message: 'Usuário atualizado com sucesso.',
+      });
+      setEditingUser(null);
+      if (isSelfDemoting && currentUser) {
+        setCurrentUser({
+          ...currentUser,
+          nome: updated.nome,
+          email: updated.email,
+          perfil: 'worker',
+        });
+        navigate('/ponto', { replace: true });
+        return;
+      }
+      await loadData();
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Erro ao atualizar usuário.',
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleOpenToggleStatus = async (usuario: UsuarioListItem) => {
+    if (usuario.ativo) {
+      try {
+        const open = await hasOpenSessionForUser(getClient(), usuario.id);
+        setToggleHasOpenSession(open);
+        setToggleTarget(usuario);
+      } catch (error) {
+        showToast({
+          type: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Erro ao verificar sessão do usuário.',
+        });
+      }
+      return;
+    }
+
+    setToggleHasOpenSession(false);
+    setToggleTarget(usuario);
+  };
+
+  const handleConfirmToggleStatus = async () => {
+    if (!toggleTarget) return;
+    setIsToggling(true);
+    try {
+      await updateUsuario(getClient(), {
+        userId: toggleTarget.id,
+        nome: toggleTarget.nome,
+        email: toggleTarget.email,
+        perfil: toggleTarget.perfil,
+        ativo: !toggleTarget.ativo,
+      });
+      showToast({
+        type: 'success',
+        message: toggleTarget.ativo
+          ? 'Usuário inativado com sucesso.'
+          : 'Usuário reativado com sucesso.',
+      });
+      setToggleTarget(null);
+      await loadData();
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Erro ao alterar status do usuário.',
+      });
+    } finally {
+      setIsToggling(false);
+    }
+  };
+
+  const editingLockedAsLastAdmin = isLastActiveAdmin(editingUser);
 
   return (
     <section className="card">
@@ -270,33 +444,61 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
                 <th>Status</th>
                 <th>Projetos vinculados</th>
                 <th>Criado em</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {filteredUsuarios.map((usuario) => (
-                <tr key={usuario.id}>
-                  <td>
-                    <strong>{usuario.nome}</strong>
-                  </td>
-                  <td>{usuario.email}</td>
-                  <td>
-                    <Badge variant={usuario.perfil}>
-                      {usuario.perfil === 'admin' ? 'Admin' : 'Worker'}
-                    </Badge>
-                  </td>
-                  <td>
-                    <Badge variant={usuario.ativo ? 'success' : 'warning'}>
-                      {usuario.ativo ? 'Ativo' : 'Inativo'}
-                    </Badge>
-                  </td>
-                  <td>
-                    {usuario.projetos_vinculados.length > 0
-                      ? usuario.projetos_vinculados.map((p) => p.nome).join(', ')
-                      : 'Nenhum'}
-                  </td>
-                  <td>{formatUtcToLocalDateTime(usuario.criado_em)}</td>
-                </tr>
-              ))}
+              {filteredUsuarios.map((usuario) => {
+                const locked = isLastActiveAdmin(usuario);
+                return (
+                  <tr key={usuario.id}>
+                    <td>
+                      <strong>{usuario.nome}</strong>
+                    </td>
+                    <td>{usuario.email}</td>
+                    <td>
+                      <Badge variant={usuario.perfil}>
+                        {usuario.perfil === 'admin' ? 'Admin' : 'Worker'}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Badge variant={usuario.ativo ? 'success' : 'warning'}>
+                        {usuario.ativo ? 'Ativo' : 'Inativo'}
+                      </Badge>
+                    </td>
+                    <td>
+                      {usuario.projetos_vinculados.length > 0
+                        ? usuario.projetos_vinculados
+                            .map((p) => p.nome)
+                            .join(', ')
+                        : 'Nenhum'}
+                    </td>
+                    <td>{formatUtcToLocalDateTime(usuario.criado_em)}</td>
+                    <td>
+                      <div className="actions-row">
+                        <Button
+                          variant="secondary"
+                          onClick={() => openEditModal(usuario)}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          disabled={locked}
+                          title={
+                            locked
+                              ? 'Único administrador ativo protegido (RN05)'
+                              : undefined
+                          }
+                          onClick={() => void handleOpenToggleStatus(usuario)}
+                        >
+                          {usuario.ativo ? 'Inativar' : 'Reativar'}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -413,6 +615,138 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(editingUser)}
+        title="Editar Usuário"
+        onClose={() => setEditingUser(null)}
+      >
+        <form className="form-stack" onSubmit={handleEditSubmit} noValidate>
+          {editingLockedAsLastAdmin ? (
+            <div className="alert-error" role="status">
+              Este é o único administrador ativo do sistema. Não é permitido
+              inativá-lo nem alterar seu perfil para Worker.
+            </div>
+          ) : null}
+
+          <Input
+            label="Nome completo"
+            name="edit-nome"
+            value={editNome}
+            onChange={(event) => setEditNome(event.target.value)}
+            error={editErrors.nome}
+            disabled={isUpdating}
+          />
+          <Input
+            label="E-mail"
+            name="edit-email"
+            type="email"
+            value={editEmail}
+            onChange={(event) => setEditEmail(event.target.value)}
+            error={editErrors.email}
+            disabled={isUpdating}
+          />
+
+          <div className="field-group">
+            <label htmlFor="edit-usuario-perfil" className="field-label">
+              Perfil
+            </label>
+            <select
+              id="edit-usuario-perfil"
+              className="field-input"
+              value={editPerfil}
+              onChange={(event) => {
+                setEditPerfil(event.target.value as PerfilNome);
+                setConfirmSelfDemotion(false);
+              }}
+              disabled={isUpdating || editingLockedAsLastAdmin}
+            >
+              <option value="worker">Worker</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+
+          <label className="checkbox-item">
+            <input
+              type="checkbox"
+              checked={editAtivo}
+              onChange={(event) => setEditAtivo(event.target.checked)}
+              disabled={isUpdating || editingLockedAsLastAdmin}
+            />
+            <span>Usuário ativo</span>
+          </label>
+
+          {confirmSelfDemotion ? (
+            <div className="alert-error" role="alert">
+              Atenção: ao alterar seu próprio perfil para Worker, você perderá
+              acesso administrativo imediatamente. Clique em Salvar alterações
+              novamente para confirmar.
+            </div>
+          ) : null}
+
+          <div className="modal-footer">
+            <Button
+              variant="secondary"
+              onClick={() => setEditingUser(null)}
+              disabled={isUpdating}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary" isLoading={isUpdating}>
+              Salvar alterações
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(toggleTarget)}
+        title={
+          toggleTarget?.ativo ? 'Inativar Usuário' : 'Reativar Usuário'
+        }
+        onClose={() => setToggleTarget(null)}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setToggleTarget(null)}
+              disabled={isToggling}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant={toggleTarget?.ativo ? 'danger' : 'primary'}
+              isLoading={isToggling}
+              onClick={() => void handleConfirmToggleStatus()}
+            >
+              {toggleTarget?.ativo ? 'Confirmar inativação' : 'Confirmar reativação'}
+            </Button>
+          </>
+        }
+      >
+        <div className="form-stack">
+          <p>
+            {toggleTarget?.ativo ? (
+              <>
+                Deseja inativar <strong>{toggleTarget.nome}</strong>? O acesso
+                ao sistema será bloqueado preservando todo o histórico de
+                pontos.
+              </>
+            ) : (
+              <>
+                Deseja reativar <strong>{toggleTarget?.nome}</strong>? O acesso
+                ao sistema será restaurado.
+              </>
+            )}
+          </p>
+          {toggleHasOpenSession ? (
+            <div className="alert-error" role="alert">
+              Este usuário possui uma sessão de ponto em aberto. Após inativar,
+              encerre o registro administrativamente nos relatórios.
+            </div>
+          ) : null}
+        </div>
       </Modal>
     </section>
   );

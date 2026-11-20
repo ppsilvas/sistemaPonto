@@ -19,6 +19,14 @@ export interface CreateUsuarioInput {
   projetoIds: string[];
 }
 
+export interface UpdateUsuarioInput {
+  userId: string;
+  nome: string;
+  email: string;
+  perfil: PerfilNome;
+  ativo: boolean;
+}
+
 interface UsuarioQueryRow {
   id: string;
   nome: string;
@@ -99,45 +107,96 @@ export async function listProjetosAtivos(
   return (data ?? []) as Projeto[];
 }
 
-export async function createUsuario(
+async function invokeAdminFunction<T>(
   client: SupabaseClient,
-  input: CreateUsuarioInput,
-): Promise<Usuario> {
-  const { data, error } = await client.functions.invoke<Usuario>(
-    'admin-create-user',
-    {
-      body: {
-        nome: input.nome.trim(),
-        email: input.email.trim().toLowerCase(),
-        password: input.password,
-        perfil: input.perfil,
-        projetoIds: input.projetoIds,
-      },
-    },
-  );
+  functionName: string,
+  body: Record<string, unknown>,
+  fallbackMessage: string,
+): Promise<T> {
+  const { data, error } = await client.functions.invoke<T>(functionName, {
+    body,
+  });
 
   if (error) {
     const context = (error as { context?: Response }).context;
     if (context && typeof context.json === 'function') {
       try {
-        const body = (await context.json()) as { error?: string };
-        if (body.error) {
-          throw new Error(body.error);
+        const parsed = (await context.json()) as { error?: string };
+        if (parsed.error) {
+          throw new Error(parsed.error);
         }
       } catch (inner) {
-        if (inner instanceof Error && inner.message !== 'Unexpected end of JSON input') {
+        if (
+          inner instanceof Error &&
+          inner.message !== 'Unexpected end of JSON input'
+        ) {
           throw inner;
         }
       }
     }
-    throw new Error(error.message || 'Não foi possível cadastrar o usuário.');
+    throw new Error(error.message || fallbackMessage);
   }
 
   if (!data) {
-    throw new Error('Resposta vazia ao cadastrar usuário.');
+    throw new Error(`${fallbackMessage} (resposta vazia).`);
   }
 
   return data;
+}
+
+export async function createUsuario(
+  client: SupabaseClient,
+  input: CreateUsuarioInput,
+): Promise<Usuario> {
+  return invokeAdminFunction<Usuario>(
+    client,
+    'admin-create-user',
+    {
+      nome: input.nome.trim(),
+      email: input.email.trim().toLowerCase(),
+      password: input.password,
+      perfil: input.perfil,
+      projetoIds: input.projetoIds,
+    },
+    'Não foi possível cadastrar o usuário.',
+  );
+}
+
+export async function updateUsuario(
+  client: SupabaseClient,
+  input: UpdateUsuarioInput,
+): Promise<Usuario> {
+  return invokeAdminFunction<Usuario>(
+    client,
+    'admin-update-user',
+    {
+      userId: input.userId,
+      nome: input.nome.trim(),
+      email: input.email.trim().toLowerCase(),
+      perfil: input.perfil,
+      ativo: input.ativo,
+    },
+    'Não foi possível atualizar o usuário.',
+  );
+}
+
+export async function hasOpenSessionForUser(
+  client: SupabaseClient,
+  userId: string,
+): Promise<boolean> {
+  const { data, error } = await client
+    .from('registros_ponto')
+    .select('id')
+    .eq('usuario_id', userId)
+    .is('horario_saida', null)
+    .is('excluido_em', null)
+    .limit(1);
+
+  if (error) {
+    throw new Error('Não foi possível verificar sessão em aberto do usuário.');
+  }
+
+  return (data ?? []).length > 0;
 }
 
 export function generateStrongPassword(length = 12): string {
