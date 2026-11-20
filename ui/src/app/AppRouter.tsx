@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
 import { LoginPage } from '../features/auth/LoginPage';
 import { ProjetosPage } from '../features/projetos/ProjetosPage';
+import { UsuariosPage } from '../features/usuarios/UsuariosPage';
 import { AdminRoute, PrivateRoute } from './RouteGuards';
 
 function PlaceholderPage({
@@ -65,15 +66,7 @@ export function AppRouter() {
               }
             />
             <Route path="/projetos" element={<ProjetosPage />} />
-            <Route
-              path="/usuarios"
-              element={
-                <PlaceholderPage
-                  title="Usuários"
-                  description="Cadastro, edição e inativação de usuários."
-                />
-              }
-            />
+            <Route path="/usuarios" element={<UsuariosPage />} />
           </Route>
         </Route>
       </Route>
