@@ -22,6 +22,10 @@ export function AppRouter() {
 
           <Route element={<AdminRoute />}>
             <Route path="/relatorios" element={<RelatoriosPage />} />
+            <Route
+              path="/relatórios"
+              element={<Navigate to="/relatorios" replace />}
+            />
             <Route path="/projetos" element={<ProjetosPage />} />
             <Route path="/usuarios" element={<UsuariosPage />} />
           </Route>
