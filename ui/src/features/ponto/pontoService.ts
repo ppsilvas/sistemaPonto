@@ -22,6 +22,10 @@ export interface SessaoPontoAtiva extends RegistroPonto {
   projeto_nome: string;
 }
 
+export interface SessaoPontoResumo extends RegistroPonto {
+  projeto_nome: string;
+}
+
 interface LinkedProjectRow {
   projeto_id: string;
   projetos: Projeto | Projeto[] | null;
@@ -63,6 +67,23 @@ export async function fetchLinkedActiveProjects(
   return projects.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 }
 
+function mapSessionRow(row: ActiveSessionRow): SessaoPontoAtiva {
+  const projeto = extractRelation(row.projetos);
+  return {
+    id: row.id,
+    usuario_id: row.usuario_id,
+    projeto_id: row.projeto_id,
+    horario_entrada: row.horario_entrada,
+    horario_saida: row.horario_saida,
+    observacoes: row.observacoes,
+    atualizado_em: row.atualizado_em,
+    atualizado_por: row.atualizado_por,
+    excluido_em: row.excluido_em,
+    excluido_por: row.excluido_por,
+    projeto_nome: projeto?.nome ?? 'Projeto',
+  };
+}
+
 export async function fetchActiveSession(
   client: SupabaseClient,
   userId: string,
@@ -85,20 +106,32 @@ export async function fetchActiveSession(
     return null;
   }
 
-  const projeto = extractRelation(data.projetos);
-  return {
-    id: data.id,
-    usuario_id: data.usuario_id,
-    projeto_id: data.projeto_id,
-    horario_entrada: data.horario_entrada,
-    horario_saida: data.horario_saida,
-    observacoes: data.observacoes,
-    atualizado_em: data.atualizado_em,
-    atualizado_por: data.atualizado_por,
-    excluido_em: data.excluido_em,
-    excluido_por: data.excluido_por,
-    projeto_nome: projeto?.nome ?? 'Projeto',
-  };
+  return mapSessionRow(data);
+}
+
+export async function fetchTodaySessions(
+  client: SupabaseClient,
+  userId: string,
+): Promise<SessaoPontoResumo[]> {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const { data, error } = await client
+    .from('registros_ponto')
+    .select(
+      'id, usuario_id, projeto_id, horario_entrada, horario_saida, observacoes, atualizado_em, atualizado_por, excluido_em, excluido_por, projetos(id, nome)',
+    )
+    .eq('usuario_id', userId)
+    .is('excluido_em', null)
+    .not('horario_saida', 'is', null)
+    .gte('horario_entrada', startOfToday.toISOString())
+    .order('horario_entrada', { ascending: false });
+
+  if (error) {
+    throw new Error('Não foi possível carregar as sessões de hoje.');
+  }
+
+  return ((data ?? []) as ActiveSessionRow[]).map(mapSessionRow);
 }
 
 export async function iniciarPonto(
@@ -136,6 +169,39 @@ export async function iniciarPonto(
     throw new PontoError(
       'UNKNOWN',
       'Não foi possível iniciar o ponto. Verifique sua conexão e tente novamente.',
+    );
+  }
+
+  return data as RegistroPonto;
+}
+
+export async function pausarPonto(
+  client: SupabaseClient,
+  observacoes?: string | null,
+): Promise<RegistroPonto> {
+  const normalizedObs = observacoes?.trim() ? observacoes.trim() : null;
+
+  const { data, error } = await client.rpc('pausar_ponto', {
+    p_observacoes: normalizedObs,
+  });
+
+  if (error || !data) {
+    const msg = error?.message ?? '';
+    if (msg.includes('NO_ACTIVE_SESSION')) {
+      throw new PontoError(
+        'NO_ACTIVE_SESSION',
+        'Esta sessão de ponto já foi encerrada anteriormente.',
+      );
+    }
+    if (msg.includes('UNAUTHORIZED')) {
+      throw new PontoError(
+        'UNAUTHORIZED',
+        'Sessão expirada ou usuário inativo.',
+      );
+    }
+    throw new PontoError(
+      'UNKNOWN',
+      'Não foi possível encerrar o ponto. Verifique sua conexão e tente novamente.',
     );
   }
 
