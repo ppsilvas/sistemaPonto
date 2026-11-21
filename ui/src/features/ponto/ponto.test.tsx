@@ -55,6 +55,10 @@ interface MockOptions {
     data: (RegistroPonto & { projetos: { id: string; nome: string } | null }) | null;
     error?: Error | null;
   }>;
+  todaySessions?: Array<
+    RegistroPonto & { projetos: { id: string; nome: string } | null }
+  >;
+  todaySessionsError?: Error | null;
   rpcHandler?: (
     fn: string,
     params: Record<string, unknown>,
@@ -87,6 +91,9 @@ function createMockSupabase(options: MockOptions = {}): SupabaseClient {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
         is: vi.fn().mockReturnThis(),
+        not: vi.fn().mockReturnThis(),
+        gte: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
         maybeSingle: vi.fn(async () => {
           const next = sessionQueue.shift() ?? { data: null };
           return {
@@ -94,6 +101,11 @@ function createMockSupabase(options: MockOptions = {}): SupabaseClient {
             error: next.error ?? null,
           };
         }),
+        then: (resolve: (val: unknown) => void) =>
+          resolve({
+            data: options.todaySessionsError ? null : (options.todaySessions ?? []),
+            error: options.todaySessionsError ?? null,
+          }),
       };
       return chain;
     }
@@ -515,5 +527,309 @@ describe('PontoPage — UC-07 (Start e Seleção de Projeto)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('active-session-panel')).toBeInTheDocument();
     });
+  });
+});
+
+describe('PontoPage — UC-08 (Pause, Cronômetro Ativo e Troca de Projeto)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('restaura sessão ativa com cronômetro em 00:15:xx e pausa complementando observações', async () => {
+    const user = userEvent.setup();
+    const entradaIso = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const saidaIso = new Date().toISOString();
+
+    const client = createMockSupabase({
+      linkedProjects: [projetoA, projetoB],
+      activeSessionQueue: [
+        {
+          data: {
+            id: 'reg-1',
+            usuario_id: workerUser.id,
+            projeto_id: projetoB.id,
+            horario_entrada: entradaIso,
+            horario_saida: null,
+            observacoes: 'Setup inicial',
+            atualizado_em: null,
+            atualizado_por: null,
+            excluido_em: null,
+            excluido_por: null,
+            projetos: { id: projetoB.id, nome: projetoB.nome },
+          },
+        },
+      ],
+      rpcHandler: async (fn, params) => {
+        expect(fn).toBe('pausar_ponto');
+        expect(params).toEqual({
+          p_observacoes: 'Setup inicial + testes de integração',
+        });
+        return {
+          data: {
+            id: 'reg-1',
+            usuario_id: workerUser.id,
+            projeto_id: projetoB.id,
+            horario_entrada: entradaIso,
+            horario_saida: saidaIso,
+            observacoes: 'Setup inicial + testes de integração',
+            atualizado_em: null,
+            atualizado_por: null,
+            excluido_em: null,
+            excluido_por: null,
+          },
+          error: null,
+        };
+      },
+    });
+
+    renderPontoPage(client);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-session-panel')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('active-session-panel')).toHaveTextContent(
+      'API Pagamentos',
+    );
+    expect(screen.getByTestId('ponto-timer').textContent).toMatch(
+      /^00:15:\d{2}$/,
+    );
+    expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled();
+
+    const obsInput = screen.getByLabelText('Observações (opcional)');
+    expect(obsInput).toHaveValue('Setup inicial');
+    await user.type(obsInput, ' + testes de integração');
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('closed-session-summary')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('closed-session-summary')).toHaveTextContent(
+      'API Pagamentos',
+    );
+    expect(screen.getByTestId('today-sessions-panel')).toHaveTextContent(
+      'Sessões de hoje',
+    );
+    expect(obsInput).toHaveValue('');
+    expect(screen.getByLabelText('Projeto')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeDisabled();
+  });
+
+  it('permite troca de projeto após Pause gerando novo registro independente (RN03)', async () => {
+    const user = userEvent.setup();
+    const entrada1 = new Date(Date.now() - 60_000).toISOString();
+    const saida1 = new Date().toISOString();
+    const entrada2 = new Date().toISOString();
+
+    const rpcCalls: Array<{ fn: string; params: Record<string, unknown> }> = [];
+    const client = createMockSupabase({
+      linkedProjects: [projetoA, projetoB],
+      activeSessionQueue: [
+        {
+          data: {
+            id: 'reg-a',
+            usuario_id: workerUser.id,
+            projeto_id: projetoA.id,
+            horario_entrada: entrada1,
+            horario_saida: null,
+            observacoes: null,
+            atualizado_em: null,
+            atualizado_por: null,
+            excluido_em: null,
+            excluido_por: null,
+            projetos: { id: projetoA.id, nome: projetoA.nome },
+          },
+        },
+      ],
+      rpcHandler: async (fn, params) => {
+        rpcCalls.push({ fn, params });
+        if (fn === 'pausar_ponto') {
+          return {
+            data: {
+              id: 'reg-a',
+              usuario_id: workerUser.id,
+              projeto_id: projetoA.id,
+              horario_entrada: entrada1,
+              horario_saida: saida1,
+              observacoes: null,
+              atualizado_em: null,
+              atualizado_por: null,
+              excluido_em: null,
+              excluido_por: null,
+            },
+            error: null,
+          };
+        }
+        return {
+          data: {
+            id: 'reg-b',
+            usuario_id: workerUser.id,
+            projeto_id: projetoB.id,
+            horario_entrada: entrada2,
+            horario_saida: null,
+            observacoes: null,
+            atualizado_em: null,
+            atualizado_por: null,
+            excluido_em: null,
+            excluido_por: null,
+          },
+          error: null,
+        };
+      },
+    });
+
+    renderPontoPage(client);
+    await waitFor(() => {
+      expect(screen.getByTestId('active-session-panel')).toHaveTextContent(
+        'App Mobile',
+      );
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
+    });
+
+    await user.selectOptions(screen.getByLabelText('Projeto'), projetoB.id);
+    await user.click(screen.getByRole('button', { name: 'Start' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-session-panel')).toHaveTextContent(
+        'API Pagamentos',
+      );
+    });
+
+    expect(rpcCalls).toEqual([
+      { fn: 'pausar_ponto', params: { p_observacoes: null } },
+      {
+        fn: 'iniciar_ponto',
+        params: { p_projeto_id: projetoB.id, p_observacoes: null },
+      },
+    ]);
+  });
+
+  it('trata NO_ACTIVE_SESSION e UNAUTHORIZED no Pause atualizando estado da tela', async () => {
+    const user = userEvent.setup();
+    const activeRow = {
+      id: 'reg-1',
+      usuario_id: workerUser.id,
+      projeto_id: projetoA.id,
+      horario_entrada: new Date().toISOString(),
+      horario_saida: null,
+      observacoes: null,
+      atualizado_em: null,
+      atualizado_por: null,
+      excluido_em: null,
+      excluido_por: null,
+      projetos: { id: projetoA.id, nome: projetoA.nome },
+    };
+
+    const clientNoSession = createMockSupabase({
+      linkedProjects: [projetoA],
+      activeSessionQueue: [{ data: activeRow }, { data: null }],
+      rpcHandler: async () => ({
+        data: null,
+        error: { message: 'NO_ACTIVE_SESSION: Nenhuma sessão ativa.' },
+      }),
+    });
+
+    const first = renderPontoPage(clientNoSession);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled();
+    });
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Esta sessão de ponto já foi encerrada anteriormente.'),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
+    first.unmount();
+
+    const clientUnauth = createMockSupabase({
+      linkedProjects: [projetoA],
+      activeSessionQueue: [{ data: activeRow }],
+      rpcHandler: async () => ({
+        data: null,
+        error: { message: 'UNAUTHORIZED: Usuário inativo.' },
+      }),
+    });
+    renderPontoPage(clientUnauth);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled();
+    });
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+    await waitFor(() => {
+      expect(
+        screen.getByText('Sessão expirada ou usuário inativo.'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('preserva observações em erro de rede no Pause e sincroniza se já foi encerrado', async () => {
+    const user = userEvent.setup();
+    const activeRow = {
+      id: 'reg-net',
+      usuario_id: workerUser.id,
+      projeto_id: projetoA.id,
+      horario_entrada: new Date().toISOString(),
+      horario_saida: null,
+      observacoes: 'Inicial',
+      atualizado_em: null,
+      atualizado_por: null,
+      excluido_em: null,
+      excluido_por: null,
+      projetos: { id: projetoA.id, nome: projetoA.nome },
+    };
+
+    const clientStillActive = createMockSupabase({
+      linkedProjects: [projetoA],
+      activeSessionQueue: [{ data: activeRow }, { data: activeRow }],
+      rpcHandler: async () => ({
+        data: null,
+        error: { message: 'Network error' },
+      }),
+    });
+
+    const first = renderPontoPage(clientStillActive);
+    const obsInput = await screen.findByLabelText('Observações (opcional)');
+    await user.type(obsInput, ' + detalhe');
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Não foi possível encerrar o ponto. Verifique sua conexão e tente novamente.',
+        ),
+      ).toBeInTheDocument();
+    });
+    expect(obsInput).toHaveValue('Inicial + detalhe');
+    first.unmount();
+
+    const clientClosedOnServer = createMockSupabase({
+      linkedProjects: [projetoA],
+      activeSessionQueue: [{ data: activeRow }, { data: null }],
+      rpcHandler: async () => ({
+        data: null,
+        error: { message: 'Timeout' },
+      }),
+    });
+
+    renderPontoPage(clientClosedOnServer);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled();
+    });
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Sua sessão de ponto foi encerrada e sincronizada.'),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
   });
 });
