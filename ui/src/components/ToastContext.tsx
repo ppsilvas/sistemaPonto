@@ -8,10 +8,16 @@ import {
 
 export type ToastType = 'success' | 'error' | 'info';
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface ToastItem {
   id: string;
   type: ToastType;
   message: string;
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
@@ -44,6 +50,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role={toast.type === 'error' ? 'alert' : 'status'}
           >
             <span>{toast.message}</span>
+            {toast.action ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={toast.action.onClick}
+              >
+                {toast.action.label}
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn btn-ghost"
