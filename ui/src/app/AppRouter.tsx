@@ -9,21 +9,6 @@ import { RelatoriosPage } from '../features/relatorios/RelatoriosPage';
 import { UsuariosPage } from '../features/usuarios/UsuariosPage';
 import { AdminRoute, PrivateRoute } from './RouteGuards';
 
-function PlaceholderPage({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <section className="card">
-      <h1>{title}</h1>
-      <p>{description}</p>
-    </section>
-  );
-}
-
 export function AppRouter() {
   return (
     <Routes>

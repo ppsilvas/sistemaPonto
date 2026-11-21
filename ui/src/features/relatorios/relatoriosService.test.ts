@@ -277,4 +277,83 @@ describe('relatoriosService', () => {
       'Bruno',
     ]);
   });
+
+  it('lança erro quando listRelatorioFilterOptions falha em projetos ou fetchRelatorioPontos falha', async () => {
+    const usersOk = createMockQueryBuilder({ data: [], error: null });
+    const projectsErr = createMockQueryBuilder({
+      data: null,
+      error: { message: 'db error' },
+    });
+    const clientProjectsErr = {
+      from: vi.fn((table: string) =>
+        table === 'usuarios' ? usersOk : projectsErr,
+      ),
+    } as unknown as SupabaseClient;
+
+    await expect(listRelatorioFilterOptions(clientProjectsErr)).rejects.toThrow(
+      'Não foi possível carregar a lista de projetos.',
+    );
+
+    const registrosErr = createMockQueryBuilder({
+      data: null,
+      error: { message: 'query error' },
+    });
+    const clientRegistrosErr = {
+      from: vi.fn(() => registrosErr),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      fetchRelatorioPontos(clientRegistrosErr, {
+        usuarioId: 'todos',
+        projetoId: 'todos',
+        dataInicial: '2026-11-01',
+        dataFinal: '2026-11-30',
+        status: 'todos',
+        incluirExcluidos: false,
+      }),
+    ).rejects.toThrow('Não foi possível carregar os registros de ponto.');
+  });
+
+  it('usa fallbacks seguros quando relações ou administradores não são encontrados', async () => {
+    const registrosBuilder = createMockQueryBuilder({
+      data: [
+        {
+          id: 'r-fallback',
+          usuario_id: 'u-x',
+          projeto_id: 'p-x',
+          horario_entrada: '2026-11-10T10:00:00.000Z',
+          horario_saida: '2026-11-10T11:00:00.000Z',
+          observacoes: null,
+          atualizado_em: '2026-11-10T12:00:00.000Z',
+          atualizado_por: 'admin-missing',
+          excluido_em: '2026-11-10T13:00:00.000Z',
+          excluido_por: 'admin-missing',
+          usuarios: null,
+          projetos: [],
+        },
+      ],
+      error: null,
+    });
+    const adminsBuilder = createMockQueryBuilder({ data: null, error: null });
+
+    const client = {
+      from: vi.fn((table: string) =>
+        table === 'registros_ponto' ? registrosBuilder : adminsBuilder,
+      ),
+    } as unknown as SupabaseClient;
+
+    const result = await fetchRelatorioPontos(client, {
+      usuarioId: 'todos',
+      projetoId: 'todos',
+      dataInicial: '2026-11-01',
+      dataFinal: '2026-11-30',
+      status: 'todos',
+      incluirExcluidos: true,
+    });
+
+    expect(result.registros[0]?.usuario_nome).toBe('Usuário');
+    expect(result.registros[0]?.projeto_nome).toBe('Projeto');
+    expect(result.registros[0]?.atualizado_por_nome).toBe('Administrador');
+    expect(result.registros[0]?.excluido_por_nome).toBe('Administrador');
+  });
 });

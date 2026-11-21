@@ -175,10 +175,13 @@ export function formatTotalHours(totalSeconds: number): string {
   return formatDurationHM(totalSeconds);
 }
 
-const PRESET_PT_TO_EN: Record<
-  'hoje' | 'esta_semana' | 'este_mes' | 'mes_anterior',
-  PeriodPreset
-> = {
+export type RelatorioPeriodPreset =
+  | 'hoje'
+  | 'esta_semana'
+  | 'este_mes'
+  | 'mes_anterior';
+
+const PRESET_PT_TO_EN: Record<RelatorioPeriodPreset, PeriodPreset> = {
   hoje: 'today',
   esta_semana: 'this_week',
   este_mes: 'this_month',
@@ -186,7 +189,7 @@ const PRESET_PT_TO_EN: Record<
 };
 
 export function getPeriodRange(
-  preset: 'hoje' | 'esta_semana' | 'este_mes' | 'mes_anterior',
+  preset: RelatorioPeriodPreset,
   referenceDate: Date = new Date(),
 ): LocalDateRange {
   return getLocalDateRangeForPreset(PRESET_PT_TO_EN[preset], referenceDate);

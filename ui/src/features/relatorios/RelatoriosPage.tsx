@@ -18,7 +18,7 @@ import {
   formatTotalHours,
   formatUtcToLocalDateTime,
   getPeriodRange,
-  type PeriodPreset,
+  type RelatorioPeriodPreset as PeriodPreset,
 } from '../../lib/dateTime';
 import { getSupabaseClient } from '../../lib/supabase';
 import {
