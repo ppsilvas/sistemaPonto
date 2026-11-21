@@ -218,3 +218,47 @@ export function sumClosedSessionsDurationSeconds(
     return acc + calculateDurationSeconds(session.horario_entrada, session.horario_saida);
   }, 0);
 }
+
+export function formatUtcToLocalDateTimeInput(isoUtc: string): string {
+  const date = parseIsoUtc(isoUtc);
+  const year = date.getFullYear();
+  const month = padTwo(date.getMonth() + 1);
+  const day = padTwo(date.getDate());
+  const hours = padTwo(date.getHours());
+  const minutes = padTwo(date.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+export function localDateTimeInputToUtcIso(localDateTimeStr: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(
+    localDateTimeStr.trim(),
+  );
+  if (!match) {
+    throw new Error(
+      `Data/hora local inválida (esperado YYYY-MM-DDTHH:mm): "${localDateTimeStr}"`,
+    );
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hours = Number(match[4]);
+  const minutes = Number(match[5]);
+  const seconds = match[6] ? Number(match[6]) : 0;
+
+  const localDate = new Date(year, month - 1, day, hours, minutes, seconds, 0);
+
+  if (
+    Number.isNaN(localDate.getTime()) ||
+    localDate.getFullYear() !== year ||
+    localDate.getMonth() !== month - 1 ||
+    localDate.getDate() !== day ||
+    localDate.getHours() !== hours ||
+    localDate.getMinutes() !== minutes ||
+    localDate.getSeconds() !== seconds
+  ) {
+    throw new Error(`Data/hora local inexistente: "${localDateTimeStr}"`);
+  }
+
+  return localDate.toISOString();
+}

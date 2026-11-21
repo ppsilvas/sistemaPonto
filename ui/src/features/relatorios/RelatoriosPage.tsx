@@ -30,6 +30,8 @@ import {
   type RelatorioResultado,
   type RelatorioStatusFilter,
 } from './relatoriosService';
+import { EditarRegistroModal } from './EditarRegistroModal';
+import { ExcluirRegistroModal } from './ExcluirRegistroModal';
 
 export interface RelatoriosPageProps {
   supabaseClient?: SupabaseClient;
@@ -100,6 +102,10 @@ export function RelatoriosPage({
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [showGroupedSummary, setShowGroupedSummary] = useState(false);
+  const [editingRegistro, setEditingRegistro] =
+    useState<RegistroPontoRelatorio | null>(null);
+  const [deletingRegistro, setDeletingRegistro] =
+    useState<RegistroPontoRelatorio | null>(null);
 
   const usuariosNomeMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -135,7 +141,7 @@ export function RelatoriosPage({
     };
   }, [getClient, showToast]);
 
-  useEffect(() => {
+  const reloadRelatorio = useCallback(async () => {
     if (!filtros.dataInicial || !filtros.dataFinal) {
       setDateError(null);
       setIsLoading(false);
@@ -149,41 +155,30 @@ export function RelatoriosPage({
     }
 
     setDateError(null);
-    let active = true;
-
-    const loadRelatorio = async () => {
-      setIsLoading(true);
-      try {
-        const data = await fetchRelatorioPontos(getClient(), filtros, {
-          usuariosNomeMap,
-          nowMs: initialNowMs,
-        });
-        if (active) {
-          setResultado(data);
-          setCurrentPage(1);
-        }
-      } catch (error) {
-        if (active) {
-          showToast({
-            type: 'error',
-            message:
-              error instanceof Error
-                ? error.message
-                : 'Erro ao carregar relatório de pontos.',
-          });
-        }
-      } finally {
-        if (active) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadRelatorio();
-    return () => {
-      active = false;
-    };
+    setIsLoading(true);
+    try {
+      const data = await fetchRelatorioPontos(getClient(), filtros, {
+        usuariosNomeMap,
+        nowMs: initialNowMs,
+      });
+      setResultado(data);
+      setCurrentPage(1);
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Erro ao carregar relatório de pontos.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   }, [filtros, getClient, initialNowMs, showToast, usuariosNomeMap]);
+
+  useEffect(() => {
+    void reloadRelatorio();
+  }, [reloadRelatorio]);
 
   const totalPages = Math.max(
     1,
@@ -223,10 +218,7 @@ export function RelatoriosPage({
       onEditRegistro(registro);
       return;
     }
-    showToast({
-      type: 'info',
-      message: 'Edição de registro será disponibilizada em breve (UC-11).',
-    });
+    setEditingRegistro(registro);
   };
 
   const handleDelete = (registro: RegistroPontoRelatorio) => {
@@ -234,10 +226,7 @@ export function RelatoriosPage({
       onDeleteRegistro(registro);
       return;
     }
-    showToast({
-      type: 'info',
-      message: 'Exclusão de registro será disponibilizada em breve (UC-11).',
-    });
+    setDeletingRegistro(registro);
   };
 
   const renderAuditoria = (registro: RegistroPontoRelatorio) => {
@@ -699,6 +688,27 @@ export function RelatoriosPage({
           ) : null}
         </>
       )}
+
+      {editingRegistro ? (
+        <EditarRegistroModal
+          isOpen
+          registro={editingRegistro}
+          projetos={filterOptions.projetos}
+          supabaseClient={getClient()}
+          onClose={() => setEditingRegistro(null)}
+          onSaved={reloadRelatorio}
+        />
+      ) : null}
+
+      {deletingRegistro ? (
+        <ExcluirRegistroModal
+          isOpen
+          registro={deletingRegistro}
+          supabaseClient={getClient()}
+          onClose={() => setDeletingRegistro(null)}
+          onDeleted={reloadRelatorio}
+        />
+      ) : null}
     </section>
   );
 }
