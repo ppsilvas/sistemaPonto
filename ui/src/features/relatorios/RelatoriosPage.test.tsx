@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ToastContext';
 import * as csvModule from '../../lib/csv';
+import { formatUtcToLocalDateTimeInput } from '../../lib/dateTime';
 import { RelatoriosPage, type RelatoriosPageProps } from './RelatoriosPage';
 
 interface MockRow {
@@ -21,7 +22,13 @@ interface MockRow {
   projetos: { id: string; nome: string; ativo: boolean };
 }
 
-function createMockSupabase(rows: MockRow[]) {
+function createMockSupabase(
+  rows: MockRow[],
+  options?: {
+    linkedProjectIds?: string[];
+    rpcImpl?: (fn: string, params: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
+  },
+) {
   const usuarios = [
     { id: 'u-maria', nome: 'Maria', ativo: true },
     { id: 'u-joao', nome: 'João', ativo: false },
@@ -46,6 +53,16 @@ function createMockSupabase(rows: MockRow[]) {
       return {
         select: vi.fn().mockReturnThis(),
         order: vi.fn().mockResolvedValue({ data: projetos, error: null }),
+      };
+    }
+
+    if (table === 'usuario_projetos') {
+      const linked = (options?.linkedProjectIds ?? ['p-beta']).map((id) => ({
+        projeto_id: id,
+      }));
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockResolvedValue({ data: linked, error: null }),
       };
     }
 
@@ -94,7 +111,15 @@ function createMockSupabase(rows: MockRow[]) {
     return builder;
   });
 
-  return { from } as unknown as SupabaseClient;
+  const rpc = vi.fn(
+    options?.rpcImpl ??
+      (async () => ({
+        data: { id: 'ok' },
+        error: null,
+      })),
+  );
+
+  return { from, rpc } as unknown as SupabaseClient;
 }
 
 function renderRelatorios(props: RelatoriosPageProps) {
@@ -329,18 +354,15 @@ describe('RelatoriosPage (UC-10)', () => {
       screen.getByRole('button', { name: 'Editar registro de Maria' }),
     );
     expect(
-      screen.getByText(
-        'Edição de registro será disponibilizada em breve (UC-11).',
-      ),
+      screen.getByRole('dialog', { name: 'Editar Registro de Ponto' }),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
 
     await user.click(
       screen.getByRole('button', { name: 'Excluir registro de Maria' }),
     );
     expect(
-      screen.getByText(
-        'Exclusão de registro será disponibilizada em breve (UC-11).',
-      ),
+      screen.getByRole('dialog', { name: 'Excluir Registro de Ponto' }),
     ).toBeInTheDocument();
   });
 
@@ -423,6 +445,7 @@ describe('RelatoriosPage (UC-10)', () => {
 
     const client = createMockSupabase(sampleRows);
     renderRelatorios({ supabaseClient: client });
+
     await waitFor(() => {
       expect(screen.getByTestId('total-registros')).toHaveTextContent('2');
     });
@@ -431,5 +454,191 @@ describe('RelatoriosPage (UC-10)', () => {
     expect(screen.getByText('Erro de exportação CSV')).toBeInTheDocument();
 
     vi.restoreAllMocks();
+  });
+
+  it('edita registro com prévia de duração, valida RN04/FE05 e recarrega relatório (UC-11)', async () => {
+    const user = userEvent.setup();
+    const mutableRows = sampleRows.map((r) => ({ ...r }));
+    const rpcImpl = vi.fn(async (fn: string, params: Record<string, unknown>) => {
+      if (fn === 'editar_ponto_admin') {
+        const target = mutableRows.find((r) => r.id === params.p_registro_id);
+        if (target) {
+          target.horario_entrada = params.p_horario_entrada as string;
+          target.horario_saida = params.p_horario_saida as string | null;
+          target.observacoes = (params.p_observacoes as string | null) ?? null;
+          target.atualizado_em = '2026-11-10T15:00:00.000Z';
+          target.atualizado_por = 'u-admin';
+        }
+      }
+      return { data: { id: params.p_registro_id }, error: null };
+    });
+
+    const client = createMockSupabase(mutableRows, {
+      linkedProjectIds: ['p-beta'],
+      rpcImpl,
+    });
+
+    renderRelatorios({ supabaseClient: client });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('2');
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Editar registro de Maria' }),
+    );
+
+    const dialog = screen.getByRole('dialog', {
+      name: 'Editar Registro de Ponto',
+    });
+    expect(within(dialog).getByTestId('editar-usuario-nome')).toHaveTextContent(
+      'Maria',
+    );
+    expect(
+      within(dialog).getByRole('option', { name: 'Projeto Beta (Vinculado)' }),
+    ).toBeInTheDocument();
+
+    // FE05: botão desabilitado sem alterações reais
+    const saveButton = within(dialog).getByRole('button', {
+      name: 'Salvar alterações',
+    });
+    expect(saveButton).toBeDisabled();
+    expect(within(dialog).getByTestId('editar-duracao-previa')).toHaveTextContent(
+      '02:30:00',
+    );
+
+    // RN04: horário de saída anterior ao de entrada bloqueia envio
+    const entradaInput = within(dialog).getByLabelText('Horário de entrada');
+    const saidaInput = within(dialog).getByLabelText('Horário de saída');
+    const entradaBeforeSaida = formatUtcToLocalDateTimeInput(
+      '2026-11-10T09:00:00.000Z',
+    );
+    await user.clear(saidaInput);
+    await user.type(saidaInput, entradaBeforeSaida);
+
+    expect(
+      within(dialog).getByText(
+        'O horário de saída não pode ser anterior ao horário de entrada.',
+      ),
+    ).toBeInTheDocument();
+    expect(saveButton).toBeDisabled();
+
+    // Edição válida (+1h na saída => 03:30:00)
+    const novaSaidaLocal = formatUtcToLocalDateTimeInput(
+      '2026-11-10T13:30:00.000Z',
+    );
+    await user.clear(saidaInput);
+    await user.type(saidaInput, novaSaidaLocal);
+    expect(within(dialog).getByTestId('editar-duracao-previa')).toHaveTextContent(
+      '03:30:00',
+    );
+    expect(entradaInput).toBeInTheDocument();
+    expect(saveButton).toBeEnabled();
+
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      expect(rpcImpl).toHaveBeenCalledWith('editar_ponto_admin', {
+        p_registro_id: 'r1',
+        p_projeto_id: 'p-beta',
+        p_horario_entrada: '2026-11-10T10:00:00.000Z',
+        p_horario_saida: '2026-11-10T13:30:00.000Z',
+        p_observacoes: 'Implementação API',
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Registro de ponto atualizado com sucesso.'),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('total-horas-acumuladas')).toHaveTextContent(
+        '03:30',
+      );
+    });
+  });
+
+  it('exibe erro da RPC no modal de edição (RN01 / RECORD_NOT_FOUND) e exclui registro com auditoria (UC-11)', async () => {
+    const user = userEvent.setup();
+    const mutableRows = sampleRows.map((r) => ({ ...r }));
+    const rpcImpl = vi.fn(async (fn: string, params: Record<string, unknown>) => {
+      if (fn === 'editar_ponto_admin') {
+        return {
+          data: null,
+          error: {
+            code: '23505',
+            message: 'uq_registros_ponto_sessao_ativa',
+          },
+        };
+      }
+      if (fn === 'excluir_ponto_admin') {
+        const target = mutableRows.find((r) => r.id === params.p_registro_id);
+        if (target) {
+          target.excluido_em = '2026-11-10T16:00:00.000Z';
+          target.excluido_por = 'u-admin';
+        }
+      }
+      return { data: { id: params.p_registro_id }, error: null };
+    });
+
+    const client = createMockSupabase(mutableRows, { rpcImpl });
+    renderRelatorios({ supabaseClient: client });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('2');
+    });
+
+    // Tenta reabrir registro fechado quando usuário já tem outro ponto aberto
+    await user.click(
+      screen.getByRole('button', { name: 'Editar registro de Maria' }),
+    );
+    const editDialog = screen.getByRole('dialog', {
+      name: 'Editar Registro de Ponto',
+    });
+    await user.clear(within(editDialog).getByLabelText('Horário de saída'));
+    expect(
+      within(editDialog).getByTestId('editar-duracao-previa'),
+    ).toHaveTextContent('Em andamento');
+
+    await user.click(
+      within(editDialog).getByRole('button', { name: 'Salvar alterações' }),
+    );
+
+    await waitFor(() => {
+      expect(
+        within(editDialog).getByText(
+          'Não é possível reabrir este registro porque o usuário já possui outro ponto em andamento.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(within(editDialog).getByRole('button', { name: 'Cancelar' }));
+
+    // Exclui registro com confirmação explícita
+    await user.click(
+      screen.getByRole('button', { name: 'Excluir registro de Maria' }),
+    );
+    const deleteDialog = screen.getByRole('dialog', {
+      name: 'Excluir Registro de Ponto',
+    });
+    expect(
+      within(deleteDialog).getByText(/mantendo a trilha de auditoria da exclusão/),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(deleteDialog).getByRole('button', { name: 'Confirmar exclusão' }),
+    );
+
+    await waitFor(() => {
+      expect(rpcImpl).toHaveBeenCalledWith('excluir_ponto_admin', {
+        p_registro_id: 'r1',
+      });
+      expect(
+        screen.getByText('Registro de ponto excluído com sucesso.'),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('1');
+      expect(screen.getByTestId('total-horas-acumuladas')).toHaveTextContent(
+        '00:00',
+      );
+    });
   });
 });

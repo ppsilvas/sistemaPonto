@@ -318,3 +318,105 @@ export async function fetchRelatorioPontos(
     resumo: summarizeRelatorioRegistros(registros),
   };
 }
+
+export interface EditarPontoAdminParams {
+  registroId: string;
+  projetoId: string;
+  horarioEntrada: string;
+  horarioSaida: string | null;
+  observacoes?: string | null;
+}
+
+interface RpcErrorLike {
+  code?: string;
+  message?: string;
+}
+
+function mapAdminPontoRpcError(
+  error: RpcErrorLike,
+  action: 'editar' | 'excluir',
+): string {
+  const code = error.code ?? '';
+  const message = error.message ?? '';
+
+  if (code === '42501' || message.includes('FORBIDDEN')) {
+    return action === 'editar'
+      ? 'Apenas administradores podem editar registros de ponto.'
+      : 'Apenas administradores podem excluir registros de ponto.';
+  }
+
+  if (
+    code === '22007' ||
+    message.includes('INVALID_CHRONOLOGY') ||
+    message.includes('chk_registros_ponto_cronologia')
+  ) {
+    return 'O horário de saída não pode ser anterior ao horário de entrada.';
+  }
+
+  if (
+    code === '23505' ||
+    message.includes('uq_registros_ponto_sessao_ativa')
+  ) {
+    return 'Não é possível reabrir este registro porque o usuário já possui outro ponto em andamento.';
+  }
+
+  if (code === 'P0001' || message.includes('RECORD_NOT_FOUND')) {
+    return 'Registro de ponto não encontrado ou já foi excluído.';
+  }
+
+  return action === 'editar'
+    ? 'Não foi possível salvar as alterações do registro de ponto.'
+    : 'Não foi possível excluir o registro de ponto.';
+}
+
+export async function listUsuarioProjetosIds(
+  client: SupabaseClient,
+  usuarioId: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from('usuario_projetos')
+    .select('projeto_id')
+    .eq('usuario_id', usuarioId);
+
+  if (error) {
+    throw new Error('Não foi possível carregar os projetos vinculados ao usuário.');
+  }
+
+  return ((data ?? []) as Array<{ projeto_id: string }>).map(
+    (row) => row.projeto_id,
+  );
+}
+
+export async function editarPontoAdmin(
+  client: SupabaseClient,
+  params: EditarPontoAdminParams,
+): Promise<void> {
+  const observacoesNormalizadas = params.observacoes?.trim()
+    ? params.observacoes.trim()
+    : null;
+
+  const { error } = await client.rpc('editar_ponto_admin', {
+    p_registro_id: params.registroId,
+    p_projeto_id: params.projetoId,
+    p_horario_entrada: params.horarioEntrada,
+    p_horario_saida: params.horarioSaida,
+    p_observacoes: observacoesNormalizadas,
+  });
+
+  if (error) {
+    throw new Error(mapAdminPontoRpcError(error, 'editar'));
+  }
+}
+
+export async function excluirPontoAdmin(
+  client: SupabaseClient,
+  registroId: string,
+): Promise<void> {
+  const { error } = await client.rpc('excluir_ponto_admin', {
+    p_registro_id: registroId,
+  });
+
+  if (error) {
+    throw new Error(mapAdminPontoRpcError(error, 'excluir'));
+  }
+}
