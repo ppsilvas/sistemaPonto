@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
+import { AlterarSenhaPage } from '../features/auth/AlterarSenhaPage';
 import { LoginPage } from '../features/auth/LoginPage';
 import { PontoPage } from '../features/ponto/PontoPage';
 import { ProjetosPage } from '../features/projetos/ProjetosPage';
@@ -38,15 +39,7 @@ export function AppRouter() {
               />
             }
           />
-          <Route
-            path="/alterar-senha"
-            element={
-              <PlaceholderPage
-                title="Alterar Senha"
-                description="Atualização da própria senha."
-              />
-            }
-          />
+          <Route path="/alterar-senha" element={<AlterarSenhaPage />} />
 
           <Route element={<AdminRoute />}>
             <Route

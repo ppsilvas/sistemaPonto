@@ -9,6 +9,7 @@ import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/ToastContext';
 import { formatUtcToLocalDateTime } from '../../lib/dateTime';
 import { getSupabaseClient } from '../../lib/supabase';
+import { GerenciarEquipeModal } from './GerenciarEquipeModal';
 import {
   createProjeto,
   excluirProjeto,
@@ -54,6 +55,7 @@ export function ProjetosPage({ supabaseClient }: ProjetosPageProps) {
     null,
   );
   const [isDeleting, setIsDeleting] = useState(false);
+  const [teamTarget, setTeamTarget] = useState<ProjetoComContagem | null>(null);
 
   const loadProjetos = useCallback(async () => {
     setIsLoading(true);
@@ -285,6 +287,12 @@ export function ProjetosPage({ supabaseClient }: ProjetosPageProps) {
                     <div className="actions-row">
                       <Button
                         variant="secondary"
+                        onClick={() => setTeamTarget(projeto)}
+                      >
+                        Gerenciar Equipe
+                      </Button>
+                      <Button
+                        variant="secondary"
                         onClick={() => openEditModal(projeto)}
                       >
                         Editar
@@ -385,6 +393,14 @@ export function ProjetosPage({ supabaseClient }: ProjetosPageProps) {
           removidos.
         </p>
       </Modal>
+
+      <GerenciarEquipeModal
+        isOpen={Boolean(teamTarget)}
+        projeto={teamTarget}
+        supabaseClient={getClient()}
+        onClose={() => setTeamTarget(null)}
+        onChanged={loadProjetos}
+      />
     </section>
   );
 }

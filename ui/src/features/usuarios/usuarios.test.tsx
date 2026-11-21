@@ -412,6 +412,8 @@ describe('UsuariosPage', () => {
     // Editar próprio perfil de admin para worker (exige confirmação)
     const editButtons = screen.getAllByRole('button', { name: 'Editar' });
     await user.click(editButtons[0]!);
+    await user.click(screen.getByLabelText('Projeto Alpha'));
+    await user.click(screen.getByLabelText('Projeto Alpha'));
     await user.selectOptions(
       screen.getByLabelText('Perfil', { selector: '#edit-usuario-perfil' }),
       'worker',

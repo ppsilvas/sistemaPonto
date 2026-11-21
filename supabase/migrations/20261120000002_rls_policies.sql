@@ -47,6 +47,7 @@ REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
 
 -- 1. Políticas de public.perfis
+DROP POLICY IF EXISTS perfis_select_authenticated_active ON public.perfis;
 CREATE POLICY perfis_select_authenticated_active
   ON public.perfis
   FOR SELECT
@@ -54,6 +55,7 @@ CREATE POLICY perfis_select_authenticated_active
   USING (public.is_active_user());
 
 -- 2. Políticas de public.usuarios
+DROP POLICY IF EXISTS usuarios_select_admin_or_self ON public.usuarios;
 CREATE POLICY usuarios_select_admin_or_self
   ON public.usuarios
   FOR SELECT
@@ -63,12 +65,14 @@ CREATE POLICY usuarios_select_admin_or_self
     OR (public.is_active_user() AND id = auth.uid())
   );
 
+DROP POLICY IF EXISTS usuarios_insert_admin ON public.usuarios;
 CREATE POLICY usuarios_insert_admin
   ON public.usuarios
   FOR INSERT
   TO authenticated
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS usuarios_update_admin ON public.usuarios;
 CREATE POLICY usuarios_update_admin
   ON public.usuarios
   FOR UPDATE
@@ -76,6 +80,7 @@ CREATE POLICY usuarios_update_admin
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS usuarios_delete_admin ON public.usuarios;
 CREATE POLICY usuarios_delete_admin
   ON public.usuarios
   FOR DELETE
@@ -83,6 +88,7 @@ CREATE POLICY usuarios_delete_admin
   USING (public.is_admin());
 
 -- 3. Políticas de public.projetos
+DROP POLICY IF EXISTS projetos_select_admin_or_linked ON public.projetos;
 CREATE POLICY projetos_select_admin_or_linked
   ON public.projetos
   FOR SELECT
@@ -109,12 +115,14 @@ CREATE POLICY projetos_select_admin_or_linked
     )
   );
 
+DROP POLICY IF EXISTS projetos_insert_admin ON public.projetos;
 CREATE POLICY projetos_insert_admin
   ON public.projetos
   FOR INSERT
   TO authenticated
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS projetos_update_admin ON public.projetos;
 CREATE POLICY projetos_update_admin
   ON public.projetos
   FOR UPDATE
@@ -122,6 +130,7 @@ CREATE POLICY projetos_update_admin
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS projetos_delete_admin ON public.projetos;
 CREATE POLICY projetos_delete_admin
   ON public.projetos
   FOR DELETE
@@ -129,6 +138,7 @@ CREATE POLICY projetos_delete_admin
   USING (public.is_admin());
 
 -- 4. Políticas de public.usuario_projetos
+DROP POLICY IF EXISTS usuario_projetos_select_admin_or_self ON public.usuario_projetos;
 CREATE POLICY usuario_projetos_select_admin_or_self
   ON public.usuario_projetos
   FOR SELECT
@@ -138,12 +148,14 @@ CREATE POLICY usuario_projetos_select_admin_or_self
     OR (public.is_active_user() AND usuario_id = auth.uid())
   );
 
+DROP POLICY IF EXISTS usuario_projetos_insert_admin ON public.usuario_projetos;
 CREATE POLICY usuario_projetos_insert_admin
   ON public.usuario_projetos
   FOR INSERT
   TO authenticated
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS usuario_projetos_delete_admin ON public.usuario_projetos;
 CREATE POLICY usuario_projetos_delete_admin
   ON public.usuario_projetos
   FOR DELETE
@@ -151,6 +163,7 @@ CREATE POLICY usuario_projetos_delete_admin
   USING (public.is_admin());
 
 -- 5. Políticas de public.registros_ponto
+DROP POLICY IF EXISTS registros_ponto_select_admin_or_self ON public.registros_ponto;
 CREATE POLICY registros_ponto_select_admin_or_self
   ON public.registros_ponto
   FOR SELECT
@@ -164,6 +177,7 @@ CREATE POLICY registros_ponto_select_admin_or_self
     )
   );
 
+DROP POLICY IF EXISTS registros_ponto_insert_linked_active ON public.registros_ponto;
 CREATE POLICY registros_ponto_insert_linked_active
   ON public.registros_ponto
   FOR INSERT
@@ -181,6 +195,7 @@ CREATE POLICY registros_ponto_insert_linked_active
     )
   );
 
+DROP POLICY IF EXISTS registros_ponto_update_admin ON public.registros_ponto;
 CREATE POLICY registros_ponto_update_admin
   ON public.registros_ponto
   FOR UPDATE

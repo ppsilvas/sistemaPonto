@@ -3,6 +3,10 @@ import type { PerfilNome, Usuario } from '../../types/domain';
 
 export type AuthErrorCode =
   | 'INVALID_CREDENTIALS'
+  | 'INVALID_CURRENT_PASSWORD'
+  | 'WEAK_PASSWORD'
+  | 'SESSION_EXPIRED'
+  | 'RATE_LIMIT'
   | 'INACTIVE_USER'
   | 'PROFILE_NOT_FOUND'
   | 'NETWORK_OR_DB';
@@ -91,6 +95,24 @@ export async function fetchUserProfile(
   };
 }
 
+function isInvalidCredentialsError(error: { message?: string; status?: number } | null): boolean {
+  const msg = error?.message?.toLowerCase() ?? '';
+  return (
+    msg.includes('invalid login credentials') ||
+    msg.includes('invalid_credentials') ||
+    error?.status === 400
+  );
+}
+
+function isRateLimitError(error: { message?: string; status?: number } | null): boolean {
+  const msg = error?.message?.toLowerCase() ?? '';
+  return (
+    error?.status === 429 ||
+    msg.includes('rate limit') ||
+    msg.includes('too many requests')
+  );
+}
+
 export async function signInWithEmailAndPassword(
   client: SupabaseClient,
   email: string,
@@ -102,12 +124,7 @@ export async function signInWithEmailAndPassword(
   });
 
   if (error || !data.user) {
-    const msg = error?.message?.toLowerCase() ?? '';
-    if (
-      msg.includes('invalid login credentials') ||
-      msg.includes('invalid_credentials') ||
-      error?.status === 400
-    ) {
+    if (isInvalidCredentialsError(error)) {
       throw new AuthServiceError(
         'INVALID_CREDENTIALS',
         'E-mail ou senha inválidos.',
@@ -124,5 +141,93 @@ export async function signInWithEmailAndPassword(
   } catch (profileError) {
     await client.auth.signOut();
     throw profileError;
+  }
+}
+
+export async function changeOwnPassword(
+  client: SupabaseClient,
+  email: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const { data, error: verifyError } = await client.auth.signInWithPassword({
+    email: email.trim(),
+    password: currentPassword,
+  });
+
+  if (verifyError || !data.user) {
+    if (isInvalidCredentialsError(verifyError)) {
+      throw new AuthServiceError(
+        'INVALID_CURRENT_PASSWORD',
+        'A senha atual informada está incorreta.',
+      );
+    }
+    if (isRateLimitError(verifyError)) {
+      throw new AuthServiceError(
+        'RATE_LIMIT',
+        'Muitas tentativas seguidas. Aguarde alguns instantes antes de tentar novamente.',
+      );
+    }
+    throw new AuthServiceError(
+      'NETWORK_OR_DB',
+      'Erro ao validar a senha atual. Tente novamente.',
+    );
+  }
+
+  try {
+    await fetchUserProfile(client, data.user.id);
+  } catch (profileError) {
+    if (
+      profileError instanceof AuthServiceError &&
+      (profileError.code === 'INACTIVE_USER' ||
+        profileError.code === 'PROFILE_NOT_FOUND')
+    ) {
+      await client.auth.signOut().catch(() => undefined);
+      throw new AuthServiceError(
+        'SESSION_EXPIRED',
+        'Sua sessão expirou ou sua conta foi inativada. Faça login novamente.',
+      );
+    }
+    throw profileError;
+  }
+
+  const { error: updateError } = await client.auth.updateUser({
+    password: newPassword,
+  });
+
+  if (updateError) {
+    if (isRateLimitError(updateError)) {
+      throw new AuthServiceError(
+        'RATE_LIMIT',
+        'Muitas tentativas seguidas. Aguarde alguns instantes antes de tentar novamente.',
+      );
+    }
+    const msg = updateError.message?.toLowerCase() ?? '';
+    if (
+      updateError.status === 401 ||
+      msg.includes('session') ||
+      msg.includes('jwt') ||
+      msg.includes('not authenticated')
+    ) {
+      throw new AuthServiceError(
+        'SESSION_EXPIRED',
+        'Sua sessão expirou. Faça login novamente.',
+      );
+    }
+    if (
+      updateError.status === 422 ||
+      msg.includes('password') ||
+      msg.includes('weak') ||
+      msg.includes('length')
+    ) {
+      throw new AuthServiceError(
+        'WEAK_PASSWORD',
+        'A nova senha não atende aos requisitos mínimos de segurança.',
+      );
+    }
+    throw new AuthServiceError(
+      'NETWORK_OR_DB',
+      'Não foi possível atualizar a senha. Tente novamente.',
+    );
   }
 }
