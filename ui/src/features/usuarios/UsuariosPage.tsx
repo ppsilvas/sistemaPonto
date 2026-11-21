@@ -18,6 +18,7 @@ import { formatUtcToLocalDateTime } from '../../lib/dateTime';
 import { getSupabaseClient } from '../../lib/supabase';
 import type { PerfilNome, Projeto } from '../../types/domain';
 import { useAuth } from '../auth/AuthContext';
+import { syncProjetosDoUsuario } from '../projetos/usuarioProjetosService';
 import {
   createUsuario,
   generateStrongPassword,
@@ -73,6 +74,7 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
   const [editEmail, setEditEmail] = useState('');
   const [editPerfil, setEditPerfil] = useState<PerfilNome>('worker');
   const [editAtivo, setEditAtivo] = useState(true);
+  const [editProjetoIds, setEditProjetoIds] = useState<string[]>([]);
   const [editErrors, setEditErrors] = useState<{
     nome?: string;
     email?: string;
@@ -162,8 +164,17 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
     setEditEmail(usuario.email);
     setEditPerfil(usuario.perfil);
     setEditAtivo(usuario.ativo);
+    setEditProjetoIds(usuario.projetos_vinculados.map((p) => p.id));
     setEditErrors({});
     setConfirmSelfDemotion(false);
+  };
+
+  const toggleEditProjeto = (projetoId: string) => {
+    setEditProjetoIds((prev) =>
+      prev.includes(projetoId)
+        ? prev.filter((id) => id !== projetoId)
+        : [...prev, projetoId],
+    );
   };
 
   const toggleProjeto = (projetoId: string) => {
@@ -264,13 +275,25 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
     setEditErrors({});
     setIsUpdating(true);
     try {
-      const updated = await updateUsuario(getClient(), {
+      const client = getClient();
+      const updated = await updateUsuario(client, {
         userId: editingUser.id,
         nome: editNome,
         email: editEmail,
         perfil: editPerfil,
         ativo: editAtivo,
       });
+      const activeIds = new Set(projetosAtivos.map((p) => p.id));
+      const currentActiveIds = editingUser.projetos_vinculados
+        .map((p) => p.id)
+        .filter((id) => activeIds.has(id));
+      const nextActiveIds = editProjetoIds.filter((id) => activeIds.has(id));
+      await syncProjetosDoUsuario(
+        client,
+        editingUser.id,
+        currentActiveIds,
+        nextActiveIds,
+      );
       showToast({
         type: 'success',
         message: 'Usuário atualizado com sucesso.',
@@ -676,6 +699,29 @@ export function UsuariosPage({ supabaseClient }: UsuariosPageProps) {
             />
             <span>Usuário ativo</span>
           </label>
+
+          <div className="field-group">
+            <span className="field-label">Projetos vinculados</span>
+            {projetosAtivos.length === 0 ? (
+              <span className="login-subtitle">
+                Nenhum projeto ativo disponível.
+              </span>
+            ) : (
+              <div className="checkbox-list">
+                {projetosAtivos.map((proj) => (
+                  <label key={proj.id} className="checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={editProjetoIds.includes(proj.id)}
+                      onChange={() => toggleEditProjeto(proj.id)}
+                      disabled={isUpdating}
+                    />
+                    <span>{proj.nome}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
 
           {confirmSelfDemotion ? (
             <div className="alert-error" role="alert">
