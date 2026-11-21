@@ -7,6 +7,11 @@ import { EmptyState, LoadingState } from '../../components/FeedbackStates';
 import { Input } from '../../components/Input';
 import { useToast } from '../../components/ToastContext';
 import {
+  buildCsvFilename,
+  buildTimeEntriesCsv,
+  downloadCsvFile,
+} from '../../lib/csv';
+import {
   calculateDurationSeconds,
   formatDurationDecimalHours,
   formatDurationHMS,
@@ -247,6 +252,52 @@ export function HistoricoPage({
       ? '00:00'
       : `${formatDurationHuman(result.totalClosedSeconds)} (${formatDurationDecimalHours(result.totalClosedSeconds)})`;
 
+  const handleExportCsv = () => {
+    if (onExportCsv) {
+      onExportCsv({
+        projetoId: selectedProjetoId || undefined,
+        startDate,
+        endDate,
+        items: result.items,
+      });
+      return;
+    }
+
+    try {
+      const csvContent = buildTimeEntriesCsv(
+        result.items.map((item) => ({
+          usuarioNome: user?.nome ?? 'Usuário',
+          usuarioEmail: user?.email,
+          projetoNome: item.projeto_nome,
+          horario_entrada: item.horario_entrada,
+          horario_saida: item.horario_saida,
+          observacoes: item.observacoes,
+        })),
+        { includeAuditColumns: false },
+      );
+
+      const filename = buildCsvFilename({
+        startDate,
+        endDate,
+        userName: user?.nome,
+      });
+
+      downloadCsvFile(csvContent, filename);
+      showToast({
+        type: 'success',
+        message: 'Relatório CSV exportado com sucesso.',
+      });
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível exportar o arquivo CSV.',
+      });
+    }
+  };
+
   return (
     <section className="historico-container">
       <div className="page-header">
@@ -260,22 +311,9 @@ export function HistoricoPage({
         <Button
           type="button"
           variant="secondary"
-          disabled={!onExportCsv || Boolean(dateRangeError) || result.items.length === 0}
-          title={
-            onExportCsv
-              ? 'Exportar registros filtrados em CSV'
-              : 'Exportação em CSV disponível em breve (UC-12)'
-          }
-          onClick={() => {
-            if (onExportCsv) {
-              onExportCsv({
-                projetoId: selectedProjetoId || undefined,
-                startDate,
-                endDate,
-                items: result.items,
-              });
-            }
-          }}
+          disabled={isLoading || Boolean(dateRangeError) || result.items.length === 0}
+          title="Exportar registros filtrados em CSV"
+          onClick={handleExportCsv}
         >
           <Download size={16} aria-hidden="true" />
           <span>Exportar CSV</span>

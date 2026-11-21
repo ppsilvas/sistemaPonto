@@ -14,6 +14,11 @@ import { EmptyState, LoadingState } from '../../components/FeedbackStates';
 import { Input } from '../../components/Input';
 import { useToast } from '../../components/ToastContext';
 import {
+  buildCsvFilename,
+  buildTimeEntriesCsv,
+  downloadCsvFile,
+} from '../../lib/csv';
+import {
   formatDurationHMS,
   formatTotalHours,
   formatUtcToLocalDateTime,
@@ -202,15 +207,57 @@ export function RelatoriosPage({
     setFiltros(createDefaultFiltros());
   };
 
+  const activeRegistrosForExport = useMemo(
+    () => resultado.registros.filter((registro) => !registro.excluido),
+    [resultado.registros],
+  );
+
   const handleExport = () => {
     if (onExportCsv) {
       onExportCsv(filtros, resultado);
       return;
     }
-    showToast({
-      type: 'info',
-      message: 'Exportação CSV será disponibilizada em breve (UC-12).',
-    });
+
+    try {
+      const csvContent = buildTimeEntriesCsv(
+        activeRegistrosForExport.map((registro) => ({
+          usuarioNome: registro.usuario_nome,
+          usuarioEmail: registro.usuario_email,
+          projetoNome: registro.projeto_nome,
+          horario_entrada: registro.horario_entrada,
+          horario_saida: registro.horario_saida,
+          observacoes: registro.observacoes,
+          atualizado_por_nome: registro.atualizado_por_nome,
+          atualizado_em: registro.atualizado_em,
+        })),
+        { includeAuditColumns: true },
+      );
+
+      const selectedUserName =
+        filtros.usuarioId !== 'todos'
+          ? usuariosNomeMap.get(filtros.usuarioId)
+          : undefined;
+
+      const filename = buildCsvFilename({
+        startDate: filtros.dataInicial,
+        endDate: filtros.dataFinal,
+        userName: selectedUserName,
+      });
+
+      downloadCsvFile(csvContent, filename);
+      showToast({
+        type: 'success',
+        message: 'Relatório CSV exportado com sucesso.',
+      });
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível exportar o arquivo CSV.',
+      });
+    }
   };
 
   const handleEdit = (registro: RegistroPontoRelatorio) => {
@@ -279,7 +326,16 @@ export function RelatoriosPage({
             Consulte registros globais da equipe, indicadores e auditoria.
           </p>
         </div>
-        <Button variant="secondary" onClick={handleExport}>
+        <Button
+          variant="secondary"
+          disabled={
+            isLoading ||
+            Boolean(dateError) ||
+            activeRegistrosForExport.length === 0
+          }
+          title="Exportar registros ativos filtrados em CSV"
+          onClick={handleExport}
+        >
           <Download size={18} aria-hidden="true" />
           <span>Exportar CSV</span>
         </Button>

@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ToastContext';
+import * as csvModule from '../../lib/csv';
 import { formatUtcToLocalDateTimeInput } from '../../lib/dateTime';
 import { RelatoriosPage, type RelatoriosPageProps } from './RelatoriosPage';
 
@@ -17,7 +18,7 @@ interface MockRow {
   atualizado_por: string | null;
   excluido_em: string | null;
   excluido_por: string | null;
-  usuarios: { id: string; nome: string; ativo: boolean };
+  usuarios: { id: string; nome: string; email?: string; ativo: boolean };
   projetos: { id: string; nome: string; ativo: boolean };
 }
 
@@ -333,17 +334,21 @@ describe('RelatoriosPage (UC-10)', () => {
 
     first.unmount();
 
+    const downloadSpy = vi
+      .spyOn(csvModule, 'downloadCsvFile')
+      .mockImplementation(() => {});
+
     renderRelatorios({ supabaseClient: client });
     await waitFor(() => {
       expect(screen.getByTestId('total-registros')).toHaveTextContent('2');
     });
 
     await user.click(screen.getByRole('button', { name: 'Exportar CSV' }));
+    expect(downloadSpy).toHaveBeenCalledTimes(1);
     expect(
-      screen.getByText(
-        'Exportação CSV será disponibilizada em breve (UC-12).',
-      ),
+      screen.getByText('Relatório CSV exportado com sucesso.'),
     ).toBeInTheDocument();
+    downloadSpy.mockRestore();
 
     await user.click(
       screen.getByRole('button', { name: 'Editar registro de Maria' }),
@@ -359,6 +364,96 @@ describe('RelatoriosPage (UC-10)', () => {
     expect(
       screen.getByRole('dialog', { name: 'Excluir Registro de Ponto' }),
     ).toBeInTheDocument();
+  });
+
+  it('exporta CSV com colunas de auditoria e exclui registros deletados mesmo com auditoria marcada (UC-12 FA03)', async () => {
+    const user = userEvent.setup();
+    const rowsWithEmail: MockRow[] = sampleRows.map((row) => ({
+      ...row,
+      usuarios: {
+        ...row.usuarios,
+        email: `${row.usuarios.id}@pontolele.com`,
+      },
+    }));
+
+    const downloadSpy = vi
+      .spyOn(csvModule, 'downloadCsvFile')
+      .mockImplementation(() => {});
+
+    const client = createMockSupabase(rowsWithEmail);
+    renderRelatorios({ supabaseClient: client });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('2');
+    });
+
+    await user.click(screen.getByLabelText('Incluir excluídos (Auditoria)'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('3');
+    });
+
+    await user.selectOptions(screen.getByLabelText('Usuário'), 'u-maria');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('2');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Exportar CSV' }));
+
+    expect(downloadSpy).toHaveBeenCalledTimes(1);
+    const [csvText, filename] = downloadSpy.mock.calls[0]!;
+
+    expect(filename).toMatch(/^pontos_maria_\d{4}-\d{2}-\d{2}_a_\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(csvText.startsWith('\uFEFF')).toBe(true);
+    expect(csvText).toContain(
+      'Usuario;Email;Projeto;Data_Entrada;Hora_Entrada;Data_Saida;Hora_Saida;Duracao_HHMM;Duracao_Horas_Decimais;Observacoes;Editado_Por;Editado_Em',
+    );
+    expect(csvText).toContain('u-maria@pontolele.com');
+    expect(csvText).toContain('Carlos Admin');
+    expect(csvText).not.toContain('Batida duplicada');
+    expect(csvText).toContain('TOTAL;;;;;;;02:30;2,50;;;');
+
+    downloadSpy.mockRestore();
+  });
+
+  it('desabilita Exportar CSV sem registros ativos e exibe toast de erro em falha de download (UC-12)', async () => {
+    const user = userEvent.setup();
+    const onlyDeletedRows: MockRow[] = [sampleRows[2]!];
+    const emptyClient = createMockSupabase(onlyDeletedRows);
+
+    const first = renderRelatorios({ supabaseClient: emptyClient });
+    await waitFor(() => {
+      expect(screen.getByText('Nenhum registro encontrado')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Exportar CSV' })).toBeDisabled();
+
+    await user.click(screen.getByLabelText('Incluir excluídos (Auditoria)'));
+    await waitFor(() => {
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('1');
+    });
+    expect(screen.getByRole('button', { name: 'Exportar CSV' })).toBeDisabled();
+    first.unmount();
+
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => {
+        throw new Error('Erro de exportação CSV');
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+
+    const client = createMockSupabase(sampleRows);
+    renderRelatorios({ supabaseClient: client });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('2');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Exportar CSV' }));
+    expect(screen.getByText('Erro de exportação CSV')).toBeInTheDocument();
+
+    vi.restoreAllMocks();
   });
 
   it('edita registro com prévia de duração, valida RN04/FE05 e recarrega relatório (UC-11)', async () => {
