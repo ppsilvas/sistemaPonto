@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
 import { AlterarSenhaPage } from '../features/auth/AlterarSenhaPage';
 import { LoginPage } from '../features/auth/LoginPage';
+import { HistoricoPage } from '../features/historico/HistoricoPage';
 import { PontoPage } from '../features/ponto/PontoPage';
 import { ProjetosPage } from '../features/projetos/ProjetosPage';
 import { RelatoriosPage } from '../features/relatorios/RelatoriosPage';
@@ -31,15 +32,7 @@ export function AppRouter() {
       <Route element={<PrivateRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/ponto" element={<PontoPage />} />
-          <Route
-            path="/historico"
-            element={
-              <PlaceholderPage
-                title="Meu Histórico"
-                description="Consulta de histórico de registros de ponto."
-              />
-            }
-          />
+          <Route path="/historico" element={<HistoricoPage />} />
           <Route path="/alterar-senha" element={<AlterarSenhaPage />} />
 
           <Route element={<AdminRoute />}>

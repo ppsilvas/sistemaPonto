@@ -1,9 +1,110 @@
+export type PeriodPreset =
+  | 'today'
+  | 'this_week'
+  | 'this_month'
+  | 'last_month';
+
+export interface LocalDateRange {
+  startDate: string;
+  endDate: string;
+}
+
 function parseIsoUtc(isoUtc: string): Date {
   const date = new Date(isoUtc);
   if (Number.isNaN(date.getTime())) {
     throw new Error(`Timestamp ISO UTC inválido: "${isoUtc}"`);
   }
   return date;
+}
+
+function parseLocalDateParts(localDateStr: string): {
+  year: number;
+  month: number;
+  day: number;
+} {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDateStr);
+  if (!match) {
+    throw new Error(`Data local inválida (esperado YYYY-MM-DD): "${localDateStr}"`);
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const probe = new Date(year, month - 1, day);
+
+  if (
+    probe.getFullYear() !== year ||
+    probe.getMonth() !== month - 1 ||
+    probe.getDate() !== day
+  ) {
+    throw new Error(`Data local inexistente: "${localDateStr}"`);
+  }
+
+  return { year, month, day };
+}
+
+export function formatLocalDateInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = padTwo(date.getMonth() + 1);
+  const day = padTwo(date.getDate());
+  return `${year}-${month}-${day}`;
+}
+
+export function startOfLocalDayToUtcIso(localDateStr: string): string {
+  const { year, month, day } = parseLocalDateParts(localDateStr);
+  return new Date(year, month - 1, day, 0, 0, 0, 0).toISOString();
+}
+
+export function endOfLocalDayToUtcIso(localDateStr: string): string {
+  const { year, month, day } = parseLocalDateParts(localDateStr);
+  return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
+}
+
+export function getLocalDateRangeForPreset(
+  preset: PeriodPreset,
+  referenceDate: Date = new Date(),
+): LocalDateRange {
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth();
+  const day = referenceDate.getDate();
+
+  switch (preset) {
+    case 'today': {
+      const formatted = formatLocalDateInput(new Date(year, month, day));
+      return { startDate: formatted, endDate: formatted };
+    }
+    case 'this_week': {
+      const current = new Date(year, month, day);
+      const dayOfWeek = current.getDay();
+      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(year, month, day + diffToMonday);
+      const sunday = new Date(
+        monday.getFullYear(),
+        monday.getMonth(),
+        monday.getDate() + 6,
+      );
+      return {
+        startDate: formatLocalDateInput(monday),
+        endDate: formatLocalDateInput(sunday),
+      };
+    }
+    case 'this_month': {
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+      return {
+        startDate: formatLocalDateInput(firstDay),
+        endDate: formatLocalDateInput(lastDay),
+      };
+    }
+    case 'last_month': {
+      const firstDay = new Date(year, month - 1, 1);
+      const lastDay = new Date(year, month, 0);
+      return {
+        startDate: formatLocalDateInput(firstDay),
+        endDate: formatLocalDateInput(lastDay),
+      };
+    }
+  }
 }
 
 export function formatUtcToLocalDate(
@@ -74,98 +175,43 @@ export function formatTotalHours(totalSeconds: number): string {
   return formatDurationHM(totalSeconds);
 }
 
-export type PeriodPreset = 'hoje' | 'esta_semana' | 'este_mes' | 'mes_anterior';
-
-export interface LocalDateRange {
-  startDate: string;
-  endDate: string;
-}
-
-function parseLocalDateParts(localDate: string): {
-  year: number;
-  month: number;
-  day: number;
-} {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate.trim());
-  if (!match) {
-    throw new Error(`Data local inválida (esperado YYYY-MM-DD): "${localDate}"`);
-  }
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-
-  const probe = new Date(year, month - 1, day);
-  if (
-    probe.getFullYear() !== year ||
-    probe.getMonth() !== month - 1 ||
-    probe.getDate() !== day
-  ) {
-    throw new Error(`Data local inexistente no calendário: "${localDate}"`);
-  }
-
-  return { year, month, day };
-}
-
-export function formatLocalDateInput(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const month = padTwo(date.getMonth() + 1);
-  const day = padTwo(date.getDate());
-  return `${year}-${month}-${day}`;
-}
-
-export function startOfLocalDayToUtcIso(localDate: string): string {
-  const { year, month, day } = parseLocalDateParts(localDate);
-  return new Date(year, month - 1, day, 0, 0, 0, 0).toISOString();
-}
-
-export function endOfLocalDayToUtcIso(localDate: string): string {
-  const { year, month, day } = parseLocalDateParts(localDate);
-  return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
-}
+const PRESET_PT_TO_EN: Record<
+  'hoje' | 'esta_semana' | 'este_mes' | 'mes_anterior',
+  PeriodPreset
+> = {
+  hoje: 'today',
+  esta_semana: 'this_week',
+  este_mes: 'this_month',
+  mes_anterior: 'last_month',
+};
 
 export function getPeriodRange(
-  preset: PeriodPreset,
+  preset: 'hoje' | 'esta_semana' | 'este_mes' | 'mes_anterior',
   referenceDate: Date = new Date(),
 ): LocalDateRange {
-  const year = referenceDate.getFullYear();
-  const month = referenceDate.getMonth();
-  const day = referenceDate.getDate();
+  return getLocalDateRangeForPreset(PRESET_PT_TO_EN[preset], referenceDate);
+}
 
-  if (preset === 'hoje') {
-    const today = formatLocalDateInput(new Date(year, month, day));
-    return { startDate: today, endDate: today };
-  }
+export function formatDurationHuman(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  return `${padTwo(hours)}h ${padTwo(minutes)}m`;
+}
 
-  if (preset === 'esta_semana') {
-    const base = new Date(year, month, day);
-    const dayOfWeek = base.getDay();
-    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const monday = new Date(year, month, day + diffToMonday);
-    const sunday = new Date(
-      monday.getFullYear(),
-      monday.getMonth(),
-      monday.getDate() + 6,
-    );
-    return {
-      startDate: formatLocalDateInput(monday),
-      endDate: formatLocalDateInput(sunday),
-    };
-  }
+export function formatDurationDecimalHours(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const decimalHours = safeSeconds / 3600;
+  return `${decimalHours.toFixed(2).replace('.', ',')}h`;
+}
 
-  if (preset === 'mes_anterior') {
-    const firstDayPrev = new Date(year, month - 1, 1);
-    const lastDayPrev = new Date(year, month, 0);
-    return {
-      startDate: formatLocalDateInput(firstDayPrev),
-      endDate: formatLocalDateInput(lastDayPrev),
-    };
-  }
-
-  const firstDayCurr = new Date(year, month, 1);
-  const lastDayCurr = new Date(year, month + 1, 0);
-  return {
-    startDate: formatLocalDateInput(firstDayCurr),
-    endDate: formatLocalDateInput(lastDayCurr),
-  };
+export function sumClosedSessionsDurationSeconds(
+  sessions: Array<{ horario_entrada: string; horario_saida: string | null }>,
+): number {
+  return sessions.reduce((acc, session) => {
+    if (!session.horario_saida) {
+      return acc;
+    }
+    return acc + calculateDurationSeconds(session.horario_entrada, session.horario_saida);
+  }, 0);
 }
