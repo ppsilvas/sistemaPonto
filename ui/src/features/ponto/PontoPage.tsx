@@ -18,8 +18,11 @@ import {
   PontoError,
   fetchActiveSession,
   fetchLinkedActiveProjects,
+  fetchTodaySessions,
   iniciarPonto,
+  pausarPonto,
   type SessaoPontoAtiva,
+  type SessaoPontoResumo,
 } from './pontoService';
 
 const MAX_OBSERVACOES_LENGTH = 1000;
@@ -42,13 +45,24 @@ export function PontoPage({ supabaseClient }: PontoPageProps) {
   const [activeSession, setActiveSession] = useState<SessaoPontoAtiva | null>(
     null,
   );
+  const [todaySessions, setTodaySessions] = useState<SessaoPontoResumo[]>([]);
+  const [lastClosedSession, setLastClosedSession] = useState<{
+    projetoNome: string;
+    duracaoFormatted: string;
+    horarioEntrada: string;
+    horarioSaida: string;
+  } | null>(null);
   const [selectedProjetoId, setSelectedProjetoId] = useState('');
   const [observacoes, setObservacoes] = useState('');
   const [projetoError, setProjetoError] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittingAction, setSubmittingAction] = useState<
+    'start' | 'pause' | null
+  >(null);
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
+
+  const isSubmitting = submittingAction !== null;
 
   const loadPontoState = useCallback(async () => {
     if (!user) {
@@ -59,13 +73,15 @@ export function PontoPage({ supabaseClient }: PontoPageProps) {
     setIsLoading(true);
     try {
       const client = getClient();
-      const [linkedProjects, session] = await Promise.all([
+      const [linkedProjects, session, today] = await Promise.all([
         fetchLinkedActiveProjects(client, user.id),
         fetchActiveSession(client, user.id),
+        fetchTodaySessions(client, user.id).catch(() => [] as SessaoPontoResumo[]),
       ]);
 
       setProjetos(linkedProjects);
       setActiveSession(session);
+      setTodaySessions(today);
 
       if (session) {
         setSelectedProjetoId(session.projeto_id);
@@ -139,7 +155,8 @@ export function PontoPage({ supabaseClient }: PontoPageProps) {
     }
 
     setProjetoError(undefined);
-    setIsSubmitting(true);
+    setLastClosedSession(null);
+    setSubmittingAction('start');
 
     try {
       const client = getClient();
@@ -194,7 +211,86 @@ export function PontoPage({ supabaseClient }: PontoPageProps) {
         });
       }
     } finally {
-      setIsSubmitting(false);
+      setSubmittingAction(null);
+    }
+  };
+
+  const handlePause = async () => {
+    if (!user || !activeSession || isSubmitting) {
+      return;
+    }
+
+    setSubmittingAction('pause');
+
+    try {
+      const client = getClient();
+      const closed = await pausarPonto(client, observacoes);
+      const projetoNome = activeSession.projeto_nome;
+      const durationSeconds = calculateDurationSeconds(
+        closed.horario_entrada,
+        closed.horario_saida,
+      );
+      const duracaoFormatted = formatDurationHMS(durationSeconds);
+      const closedSummary: SessaoPontoResumo = {
+        ...closed,
+        projeto_nome: projetoNome,
+      };
+
+      setActiveSession(null);
+      setObservacoes('');
+      setLastClosedSession({
+        projetoNome,
+        duracaoFormatted,
+        horarioEntrada: closed.horario_entrada,
+        horarioSaida: closed.horario_saida ?? closed.horario_entrada,
+      });
+      setTodaySessions((prev) => [
+        closedSummary,
+        ...prev.filter((item) => item.id !== closedSummary.id),
+      ]);
+      showToast({
+        type: 'success',
+        message: `Ponto pausado em ${projetoNome} (${duracaoFormatted}).`,
+      });
+    } catch (error) {
+      if (error instanceof PontoError && error.code === 'NO_ACTIVE_SESSION') {
+        showToast({ type: 'info', message: error.message });
+        await loadPontoState();
+      } else if (
+        error instanceof PontoError &&
+        error.code === 'UNAUTHORIZED'
+      ) {
+        showToast({ type: 'error', message: error.message });
+      } else {
+        try {
+          const existing = await fetchActiveSession(getClient(), user.id);
+          if (!existing) {
+            const today = await fetchTodaySessions(getClient(), user.id).catch(
+              () => [] as SessaoPontoResumo[],
+            );
+            setActiveSession(null);
+            setObservacoes('');
+            setTodaySessions(today);
+            showToast({
+              type: 'info',
+              message: 'Sua sessão de ponto foi encerrada e sincronizada.',
+            });
+            return;
+          }
+        } catch {
+          // Mantém mensagem de erro original caso a verificação também falhe
+        }
+
+        showToast({
+          type: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Não foi possível encerrar o ponto.',
+        });
+      }
+    } finally {
+      setSubmittingAction(null);
     }
   };
 
@@ -260,6 +356,26 @@ export function PontoPage({ supabaseClient }: PontoPageProps) {
                 data-testid="ponto-timer"
               >
                 {elapsedFormatted}
+              </div>
+            </div>
+          ) : lastClosedSession ? (
+            <div
+              className="card ponto-summary-card"
+              role="status"
+              data-testid="closed-session-summary"
+            >
+              <div className="ponto-summary-header">
+                <Badge variant="worker">Sessão encerrada</Badge>
+                <span className="ponto-start-time">
+                  {formatUtcToLocalTime(lastClosedSession.horarioEntrada)} —{' '}
+                  {formatUtcToLocalTime(lastClosedSession.horarioSaida)}
+                </span>
+              </div>
+              <div className="ponto-summary-header">
+                <strong>{lastClosedSession.projetoNome}</strong>
+                <span className="ponto-summary-duration">
+                  {lastClosedSession.duracaoFormatted}
+                </span>
               </div>
             </div>
           ) : null}
@@ -336,7 +452,9 @@ export function PontoPage({ supabaseClient }: PontoPageProps) {
                 onClick={handleStart}
               >
                 <Play size={20} aria-hidden="true" />
-                <span>{isSubmitting ? 'Iniciando...' : 'Start'}</span>
+                <span>
+                  {submittingAction === 'start' ? 'Iniciando...' : 'Start'}
+                </span>
               </Button>
 
               <Button
@@ -345,12 +463,47 @@ export function PontoPage({ supabaseClient }: PontoPageProps) {
                 variant="danger"
                 className="ponto-action-btn"
                 disabled={!activeSession || isSubmitting}
+                onClick={handlePause}
               >
                 <Square size={20} aria-hidden="true" />
-                <span>Pause</span>
+                <span>
+                  {submittingAction === 'pause' ? 'Pausando...' : 'Pause'}
+                </span>
               </Button>
             </div>
           </div>
+
+          {todaySessions.length > 0 ? (
+            <div
+              className="card ponto-today-card"
+              data-testid="today-sessions-panel"
+            >
+              <h2 className="ponto-today-title">Sessões de hoje</h2>
+              <ul className="ponto-today-list">
+                {todaySessions.map((session) => (
+                  <li key={session.id} className="ponto-today-item">
+                    <div className="ponto-today-info">
+                      <strong>{session.projeto_nome}</strong>
+                      <span className="ponto-today-time">
+                        {formatUtcToLocalTime(session.horario_entrada)} —{' '}
+                        {session.horario_saida
+                          ? formatUtcToLocalTime(session.horario_saida)
+                          : ''}
+                      </span>
+                    </div>
+                    <span className="ponto-today-duration">
+                      {formatDurationHMS(
+                        calculateDurationSeconds(
+                          session.horario_entrada,
+                          session.horario_saida,
+                        ),
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       )}
     </section>
