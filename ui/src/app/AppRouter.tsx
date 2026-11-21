@@ -4,6 +4,7 @@ import { AlterarSenhaPage } from '../features/auth/AlterarSenhaPage';
 import { LoginPage } from '../features/auth/LoginPage';
 import { PontoPage } from '../features/ponto/PontoPage';
 import { ProjetosPage } from '../features/projetos/ProjetosPage';
+import { RelatoriosPage } from '../features/relatorios/RelatoriosPage';
 import { UsuariosPage } from '../features/usuarios/UsuariosPage';
 import { AdminRoute, PrivateRoute } from './RouteGuards';
 
@@ -42,15 +43,7 @@ export function AppRouter() {
           <Route path="/alterar-senha" element={<AlterarSenhaPage />} />
 
           <Route element={<AdminRoute />}>
-            <Route
-              path="/relatorios"
-              element={
-                <PlaceholderPage
-                  title="Relatório de Pontos"
-                  description="Consulta global, auditoria e exportação CSV."
-                />
-              }
-            />
+            <Route path="/relatorios" element={<RelatoriosPage />} />
             <Route path="/projetos" element={<ProjetosPage />} />
             <Route path="/usuarios" element={<UsuariosPage />} />
           </Route>
