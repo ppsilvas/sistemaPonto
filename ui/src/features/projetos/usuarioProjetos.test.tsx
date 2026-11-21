@@ -153,7 +153,7 @@ describe('usuarioProjetosService', () => {
             nome: 'Sem Perfil',
             email: 'sem@empresa.com',
             ativo: true,
-            perfis: null,
+            perfis: null as unknown as { nome: string },
           },
         },
       ],
