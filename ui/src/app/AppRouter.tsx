@@ -5,23 +5,9 @@ import { LoginPage } from '../features/auth/LoginPage';
 import { HistoricoPage } from '../features/historico/HistoricoPage';
 import { PontoPage } from '../features/ponto/PontoPage';
 import { ProjetosPage } from '../features/projetos/ProjetosPage';
+import { RelatoriosPage } from '../features/relatorios/RelatoriosPage';
 import { UsuariosPage } from '../features/usuarios/UsuariosPage';
 import { AdminRoute, PrivateRoute } from './RouteGuards';
-
-function PlaceholderPage({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <section className="card">
-      <h1>{title}</h1>
-      <p>{description}</p>
-    </section>
-  );
-}
 
 export function AppRouter() {
   return (
@@ -35,15 +21,7 @@ export function AppRouter() {
           <Route path="/alterar-senha" element={<AlterarSenhaPage />} />
 
           <Route element={<AdminRoute />}>
-            <Route
-              path="/relatorios"
-              element={
-                <PlaceholderPage
-                  title="Relatório de Pontos"
-                  description="Consulta global, auditoria e exportação CSV."
-                />
-              }
-            />
+            <Route path="/relatorios" element={<RelatoriosPage />} />
             <Route path="/projetos" element={<ProjetosPage />} />
             <Route path="/usuarios" element={<UsuariosPage />} />
           </Route>

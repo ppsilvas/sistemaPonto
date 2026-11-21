@@ -171,6 +171,30 @@ export function formatDurationHM(totalSeconds: number): string {
   return `${padTwo(hours)}:${padTwo(minutes)}`;
 }
 
+export function formatTotalHours(totalSeconds: number): string {
+  return formatDurationHM(totalSeconds);
+}
+
+export type RelatorioPeriodPreset =
+  | 'hoje'
+  | 'esta_semana'
+  | 'este_mes'
+  | 'mes_anterior';
+
+const PRESET_PT_TO_EN: Record<RelatorioPeriodPreset, PeriodPreset> = {
+  hoje: 'today',
+  esta_semana: 'this_week',
+  este_mes: 'this_month',
+  mes_anterior: 'last_month',
+};
+
+export function getPeriodRange(
+  preset: RelatorioPeriodPreset,
+  referenceDate: Date = new Date(),
+): LocalDateRange {
+  return getLocalDateRangeForPreset(PRESET_PT_TO_EN[preset], referenceDate);
+}
+
 export function formatDurationHuman(totalSeconds: number): string {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
   const hours = Math.floor(safeSeconds / 3600);
