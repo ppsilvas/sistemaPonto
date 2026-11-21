@@ -641,4 +641,99 @@ describe('RelatoriosPage (UC-10)', () => {
       );
     });
   });
+
+  it('descarta respostas obsoletas fora de ordem ao alternar filtros rapidamente (PPS-22)', async () => {
+    const user = userEvent.setup();
+    const pendingResolvers: Array<() => void> = [];
+
+    const from = vi.fn((table: string) => {
+      if (table === 'usuarios') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({
+            data: [
+              { id: 'u-maria', nome: 'Maria', ativo: true },
+              { id: 'u-joao', nome: 'João', ativo: false },
+            ],
+            error: null,
+          }),
+          in: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      if (table === 'projetos') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({
+            data: [{ id: 'p-beta', nome: 'Projeto Beta', ativo: true }],
+            error: null,
+          }),
+        };
+      }
+
+      let selectedUser: string | null = null;
+      const builder = {
+        select: vi.fn().mockReturnThis(),
+        gte: vi.fn().mockReturnThis(),
+        lte: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        eq: vi.fn((col: string, val: string) => {
+          if (col === 'usuario_id') selectedUser = val;
+          return builder;
+        }),
+        is: vi.fn().mockReturnThis(),
+        not: vi.fn().mockReturnThis(),
+        then: (
+          resolve: (value: { data: MockRow[]; error: null }) => void,
+        ) => {
+          const filtered = sampleRows.filter(
+            (r) =>
+              r.excluido_em === null &&
+              (!selectedUser || r.usuario_id === selectedUser),
+          );
+
+          if (selectedUser === 'u-joao') {
+            return new Promise<{ data: MockRow[]; error: null }>((res) => {
+              pendingResolvers.push(() =>
+                res({ data: filtered, error: null }),
+              );
+            }).then(resolve);
+          }
+
+          return Promise.resolve({ data: filtered, error: null }).then(resolve);
+        },
+      };
+      return builder;
+    });
+
+    const client = { from } as unknown as SupabaseClient;
+    renderRelatorios({ supabaseClient: client });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('2');
+    });
+
+    // 1. Filtra por João (requisição lenta fica pendente)
+    await user.selectOptions(screen.getByLabelText('Usuário'), 'u-joao');
+    await waitFor(() => {
+      expect(pendingResolvers.length).toBeGreaterThanOrEqual(1);
+    });
+
+    // 2. Antes de João responder, muda o filtro para Maria (responde imediatamente)
+    await user.selectOptions(screen.getByLabelText('Usuário'), 'u-maria');
+    await waitFor(() => {
+      expect(screen.getByTestId('total-horas-acumuladas')).toHaveTextContent(
+        '02:30',
+      );
+    });
+
+    // 3. Resolve a requisição antiga de João depois de Maria: não deve sobrescrever Maria
+    pendingResolvers.forEach((resolveStale) => resolveStale());
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-horas-acumuladas')).toHaveTextContent(
+        '02:30',
+      );
+      expect(screen.getByTestId('total-registros')).toHaveTextContent('1');
+    });
+  });
 });

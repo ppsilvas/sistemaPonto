@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
@@ -111,6 +111,7 @@ export function RelatoriosPage({
     useState<RegistroPontoRelatorio | null>(null);
   const [deletingRegistro, setDeletingRegistro] =
     useState<RegistroPontoRelatorio | null>(null);
+  const requestIdRef = useRef(0);
 
   const usuariosNomeMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -147,6 +148,8 @@ export function RelatoriosPage({
   }, [getClient, showToast]);
 
   const reloadRelatorio = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+
     if (!filtros.dataInicial || !filtros.dataFinal) {
       setDateError(null);
       setIsLoading(false);
@@ -166,9 +169,15 @@ export function RelatoriosPage({
         usuariosNomeMap,
         nowMs: initialNowMs,
       });
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
       setResultado(data);
       setCurrentPage(1);
     } catch (error) {
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
       showToast({
         type: 'error',
         message:
@@ -177,12 +186,17 @@ export function RelatoriosPage({
             : 'Erro ao carregar relatório de pontos.',
       });
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [filtros, getClient, initialNowMs, showToast, usuariosNomeMap]);
 
   useEffect(() => {
     void reloadRelatorio();
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [reloadRelatorio]);
 
   const totalPages = Math.max(
