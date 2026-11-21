@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
 import { LoginPage } from '../features/auth/LoginPage';
+import { PontoPage } from '../features/ponto/PontoPage';
 import { ProjetosPage } from '../features/projetos/ProjetosPage';
 import { UsuariosPage } from '../features/usuarios/UsuariosPage';
 import { AdminRoute, PrivateRoute } from './RouteGuards';
@@ -27,15 +28,7 @@ export function AppRouter() {
 
       <Route element={<PrivateRoute />}>
         <Route element={<AppLayout />}>
-          <Route
-            path="/ponto"
-            element={
-              <PlaceholderPage
-                title="Registrar Ponto"
-                description="Seleção de projeto, Start/Pause e cronômetro em tempo real."
-              />
-            }
-          />
+          <Route path="/ponto" element={<PontoPage />} />
           <Route
             path="/historico"
             element={
