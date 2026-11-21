@@ -116,4 +116,25 @@ describe('App, Rotas, Guards e AppLayout', () => {
       ).toBeInTheDocument();
     });
   });
+
+  it('redireciona rota acentuada /relatórios para /relatorios preservando AdminRoute', async () => {
+    const adminRender = renderAt('/relatórios', { initialUser: adminUser });
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Relatório de Pontos' }),
+      ).toBeInTheDocument();
+    });
+    expect(window.location.pathname).toBe('/relatorios');
+    adminRender.unmount();
+
+    renderAt('/relat%C3%B3rios', { initialUser: workerUser });
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Registrar Ponto' }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText('Acesso restrito a administradores.'),
+    ).toBeInTheDocument();
+  });
 });
