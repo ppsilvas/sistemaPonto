@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateDurationSeconds,
+  endOfLocalDayToUtcIso,
+  formatDurationDecimalHours,
   formatDurationHM,
   formatDurationHMS,
+  formatDurationHuman,
+  formatLocalDateInput,
   formatUtcToLocalDate,
   formatUtcToLocalDateTime,
   formatUtcToLocalTime,
+  getLocalDateRangeForPreset,
+  startOfLocalDayToUtcIso,
+  sumClosedSessionsDurationSeconds,
 } from './dateTime';
 
 describe('dateTime utils', () => {
@@ -59,5 +66,86 @@ describe('dateTime utils', () => {
     expect(formatDurationHM(0)).toBe('00:00');
     expect(formatDurationHM(5415)).toBe('01:30');
     expect(formatDurationHM(-5)).toBe('00:00');
+  });
+
+  it('converte limites de dia local YYYY-MM-DD para ISO UTC de forma determinística', () => {
+    const startIso = startOfLocalDayToUtcIso('2026-11-20');
+    const endIso = endOfLocalDayToUtcIso('2026-11-20');
+
+    const expectedStart = new Date(2026, 10, 20, 0, 0, 0, 0).toISOString();
+    const expectedEnd = new Date(2026, 10, 20, 23, 59, 59, 999).toISOString();
+
+    expect(startIso).toBe(expectedStart);
+    expect(endIso).toBe(expectedEnd);
+    expect(new Date(endIso).getTime() - new Date(startIso).getTime()).toBe(
+      86399999,
+    );
+  });
+
+  it('lança erro para datas locais inválidas ou inexistentes', () => {
+    expect(() => startOfLocalDayToUtcIso('20/11/2026')).toThrow(
+      /Data local inválida/,
+    );
+    expect(() => endOfLocalDayToUtcIso('2026-02-31')).toThrow(
+      /Data local inexistente/,
+    );
+  });
+
+  it('calcula atalhos de período local corretamente', () => {
+    const refFriday = new Date(2026, 10, 20, 14, 0, 0);
+    expect(formatLocalDateInput(refFriday)).toBe('2026-11-20');
+    expect(getLocalDateRangeForPreset('today', refFriday)).toEqual({
+      startDate: '2026-11-20',
+      endDate: '2026-11-20',
+    });
+    expect(getLocalDateRangeForPreset('this_week', refFriday)).toEqual({
+      startDate: '2026-11-16',
+      endDate: '2026-11-22',
+    });
+    expect(getLocalDateRangeForPreset('this_month', refFriday)).toEqual({
+      startDate: '2026-11-01',
+      endDate: '2026-11-30',
+    });
+    expect(getLocalDateRangeForPreset('last_month', refFriday)).toEqual({
+      startDate: '2026-10-01',
+      endDate: '2026-10-31',
+    });
+
+    const refSunday = new Date(2026, 10, 22, 10, 0, 0);
+    expect(getLocalDateRangeForPreset('this_week', refSunday)).toEqual({
+      startDate: '2026-11-16',
+      endDate: '2026-11-22',
+    });
+
+    const refJan = new Date(2026, 0, 15, 10, 0, 0);
+    expect(getLocalDateRangeForPreset('last_month', refJan)).toEqual({
+      startDate: '2025-12-01',
+      endDate: '2025-12-31',
+    });
+  });
+
+  it('formata horas humanas e decimais e soma sessões encerradas sem erro cumulativo', () => {
+    expect(formatDurationHuman(0)).toBe('00h 00m');
+    expect(formatDurationHuman(13530)).toBe('03h 45m');
+    expect(formatDurationDecimalHours(13500)).toBe('3,75h');
+    expect(formatDurationDecimalHours(117900)).toBe('32,75h');
+
+    const total = sumClosedSessionsDurationSeconds([
+      {
+        horario_entrada: '2026-11-20T10:00:00.000Z',
+        horario_saida: '2026-11-20T10:00:40.000Z',
+      },
+      {
+        horario_entrada: '2026-11-20T11:00:00.000Z',
+        horario_saida: '2026-11-20T11:00:40.000Z',
+      },
+      {
+        horario_entrada: '2026-11-20T12:00:00.000Z',
+        horario_saida: null,
+      },
+    ]);
+
+    expect(total).toBe(80);
+    expect(formatDurationHuman(total)).toBe('00h 01m');
   });
 });
