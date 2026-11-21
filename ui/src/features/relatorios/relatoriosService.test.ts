@@ -1,8 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  editarPontoAdmin,
+  excluirPontoAdmin,
   fetchRelatorioPontos,
   listRelatorioFilterOptions,
+  listUsuarioProjetosIds,
   summarizeRelatorioRegistros,
   type RegistroPontoRelatorio,
   type RelatorioFiltros,
@@ -355,5 +358,123 @@ describe('relatoriosService', () => {
     expect(result.registros[0]?.projeto_nome).toBe('Projeto');
     expect(result.registros[0]?.atualizado_por_nome).toBe('Administrador');
     expect(result.registros[0]?.excluido_por_nome).toBe('Administrador');
+  });
+
+  it('busca projetos vinculados ao usuário e trata erro', async () => {
+    const okBuilder = createMockQueryBuilder({
+      data: [{ projeto_id: 'p1' }, { projeto_id: 'p2' }],
+      error: null,
+    });
+    const okClient = {
+      from: vi.fn(() => okBuilder),
+    } as unknown as SupabaseClient;
+
+    await expect(listUsuarioProjetosIds(okClient, 'u1')).resolves.toEqual([
+      'p1',
+      'p2',
+    ]);
+    expect(okBuilder.eq).toHaveBeenCalledWith('usuario_id', 'u1');
+
+    const errBuilder = createMockQueryBuilder({
+      data: null,
+      error: { message: 'boom' },
+    });
+    const errClient = {
+      from: vi.fn(() => errBuilder),
+    } as unknown as SupabaseClient;
+
+    await expect(listUsuarioProjetosIds(errClient, 'u1')).rejects.toThrow(
+      /Não foi possível carregar os projetos vinculados ao usuário/,
+    );
+  });
+
+  it('executa editarPontoAdmin e mapeia erros de RN04, RN01, FORBIDDEN e RECORD_NOT_FOUND', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { id: 'r1' }, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+
+    await editarPontoAdmin(client, {
+      registroId: 'r1',
+      projetoId: 'p1',
+      horarioEntrada: '2026-11-10T10:00:00.000Z',
+      horarioSaida: '2026-11-10T12:00:00.000Z',
+      observacoes: '  Ajuste de saída  ',
+    });
+
+    expect(rpc).toHaveBeenCalledWith('editar_ponto_admin', {
+      p_registro_id: 'r1',
+      p_projeto_id: 'p1',
+      p_horario_entrada: '2026-11-10T10:00:00.000Z',
+      p_horario_saida: '2026-11-10T12:00:00.000Z',
+      p_observacoes: 'Ajuste de saída',
+    });
+
+    const cases: Array<{ err: { code?: string; message?: string }; expected: RegExp }> = [
+      {
+        err: { code: '42501', message: 'FORBIDDEN' },
+        expected: /Apenas administradores podem editar/,
+      },
+      {
+        err: { code: '22007', message: 'INVALID_CHRONOLOGY' },
+        expected: /horário de saída não pode ser anterior/,
+      },
+      {
+        err: { code: '23505', message: 'duplicate key value violates unique constraint uq_registros_ponto_sessao_ativa' },
+        expected: /usuário já possui outro ponto em andamento/,
+      },
+      {
+        err: { code: 'P0001', message: 'RECORD_NOT_FOUND' },
+        expected: /não encontrado ou já foi excluído/,
+      },
+      {
+        err: { code: 'XX000', message: 'unexpected' },
+        expected: /Não foi possível salvar as alterações/,
+      },
+    ];
+
+    for (const c of cases) {
+      rpc.mockResolvedValueOnce({ data: null, error: c.err });
+      await expect(
+        editarPontoAdmin(client, {
+          registroId: 'r1',
+          projetoId: 'p1',
+          horarioEntrada: '2026-11-10T10:00:00.000Z',
+          horarioSaida: null,
+        }),
+      ).rejects.toThrow(c.expected);
+    }
+  });
+
+  it('executa excluirPontoAdmin e mapeia erros', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { id: 'r1' }, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+
+    await excluirPontoAdmin(client, 'r1');
+    expect(rpc).toHaveBeenCalledWith('excluir_ponto_admin', {
+      p_registro_id: 'r1',
+    });
+
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42501', message: 'FORBIDDEN' },
+    });
+    await expect(excluirPontoAdmin(client, 'r1')).rejects.toThrow(
+      /Apenas administradores podem excluir/,
+    );
+
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'P0001', message: 'RECORD_NOT_FOUND' },
+    });
+    await expect(excluirPontoAdmin(client, 'r1')).rejects.toThrow(
+      /não encontrado ou já foi excluído/,
+    );
+
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'XX000', message: 'unknown' },
+    });
+    await expect(excluirPontoAdmin(client, 'r1')).rejects.toThrow(
+      /Não foi possível excluir o registro de ponto/,
+    );
   });
 });

@@ -10,9 +10,11 @@ import {
   formatTotalHours,
   formatUtcToLocalDate,
   formatUtcToLocalDateTime,
+  formatUtcToLocalDateTimeInput,
   formatUtcToLocalTime,
   getLocalDateRangeForPreset,
   getPeriodRange,
+  localDateTimeInputToUtcIso,
   startOfLocalDayToUtcIso,
   sumClosedSessionsDurationSeconds,
 } from './dateTime';
@@ -203,5 +205,28 @@ describe('dateTime utils', () => {
 
     expect(total).toBe(80);
     expect(formatDurationHuman(total)).toBe('00h 01m');
+  });
+
+  it('converte ISO UTC <-> datetime-local no fuso local sem deslocamentos', () => {
+    const localDate = new Date(2026, 10, 20, 9, 45, 0, 0);
+    const utcIso = localDate.toISOString();
+
+    const inputValue = formatUtcToLocalDateTimeInput(utcIso);
+    expect(inputValue).toBe('2026-11-20T09:45');
+
+    const roundTripIso = localDateTimeInputToUtcIso(inputValue);
+    expect(roundTripIso).toBe(utcIso);
+  });
+
+  it('rejeita strings datetime-local inválidas ou inexistentes no calendário', () => {
+    expect(() => localDateTimeInputToUtcIso('20/11/2026 09:45')).toThrow(
+      /Data\/hora local inválida/,
+    );
+    expect(() => localDateTimeInputToUtcIso('2026-02-30T10:00')).toThrow(
+      /Data\/hora local inexistente/,
+    );
+    expect(() => formatUtcToLocalDateTimeInput('invalido')).toThrow(
+      /Timestamp ISO UTC inválido/,
+    );
   });
 });
