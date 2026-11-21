@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ToastContext';
 import { AuthProvider } from '../auth/AuthContext';
 import type { Usuario } from '../../types/domain';
+import * as csvModule from '../../lib/csv';
 import { HistoricoPage } from './HistoricoPage';
 
 const workerUser: Usuario = {
@@ -319,7 +320,7 @@ describe('HistoricoPage (UC-09)', () => {
     expect(screen.getByTestId('historico-total')).toHaveTextContent('00:00');
     expect(
       screen.getByRole('button', { name: /Exportar CSV/i }),
-    ).toBeDisabled();
+    ).toBeEnabled();
 
     const startInput = screen.getByLabelText('Data inicial');
     const endInput = screen.getByLabelText('Data final');
@@ -428,5 +429,130 @@ describe('HistoricoPage (UC-09)', () => {
     expect(
       screen.getByText('Não foi possível carregar seu histórico de pontos.'),
     ).toBeInTheDocument();
+  });
+
+  it('exporta CSV completo do worker sem colunas de auditoria admin e exibe toast de sucesso (UC-12)', async () => {
+    const user = userEvent.setup();
+    const now = new Date();
+    const registros: MockRegistroRow[] = Array.from({ length: 55 }, (_, i) => {
+      const start = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        5,
+        8,
+        0,
+        0,
+      );
+      const end = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        5,
+        9,
+        0,
+        0,
+      );
+      return {
+        id: `reg-${i}`,
+        usuario_id: workerUser.id,
+        projeto_id: 'proj-a',
+        horario_entrada: start.toISOString(),
+        horario_saida: end.toISOString(),
+        observacoes: i === 0 ? '=CMD|calc' : null,
+        atualizado_em: null,
+        atualizado_por: null,
+        excluido_em: null,
+        excluido_por: null,
+        projetos: { id: 'proj-a', nome: 'Projeto A', ativo: true },
+      };
+    });
+
+    const downloadSpy = vi
+      .spyOn(csvModule, 'downloadCsvFile')
+      .mockImplementation(() => {});
+
+    const { client } = createHistoricoMockClient({ registros });
+    renderHistoricoPage(client);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('historico-total')).toHaveTextContent(
+        '55h 00m (55,00h)',
+      );
+    });
+
+    await user.click(screen.getByRole('button', { name: /Exportar CSV/i }));
+
+    expect(downloadSpy).toHaveBeenCalledTimes(1);
+    const [csvText, filename] = downloadSpy.mock.calls[0]!;
+
+    expect(filename).toMatch(/^pontos_joao-worker_\d{4}-\d{2}-\d{2}_a_\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(csvText.startsWith('\uFEFF')).toBe(true);
+    expect(csvText).toContain(
+      'Usuario;Email;Projeto;Data_Entrada;Hora_Entrada;Data_Saida;Hora_Saida;Duracao_HHMM;Duracao_Horas_Decimais;Observacoes',
+    );
+    expect(csvText).not.toContain('Editado_Por');
+    expect(csvText).toContain("'=CMD|calc");
+    expect(csvText).toContain('TOTAL;;;;;;;55:00;55,00;');
+    expect(
+      screen.getByText('Relatório CSV exportado com sucesso.'),
+    ).toBeInTheDocument();
+
+    downloadSpy.mockRestore();
+  });
+
+  it('mantém Exportar CSV desabilitado sem registros e exibe toast de erro se o download falhar (UC-12)', async () => {
+    const user = userEvent.setup();
+    const { client: emptyClient } = createHistoricoMockClient({ registros: [] });
+    const first = renderHistoricoPage(emptyClient);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Nenhum registro de ponto encontrado para este período.'),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole('button', { name: /Exportar CSV/i }),
+    ).toBeDisabled();
+    first.unmount();
+
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 5, 8, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth(), 5, 9, 0, 0);
+    const { client } = createHistoricoMockClient({
+      registros: [
+        {
+          id: 'reg-1',
+          usuario_id: workerUser.id,
+          projeto_id: 'proj-a',
+          horario_entrada: start.toISOString(),
+          horario_saida: end.toISOString(),
+          observacoes: null,
+          atualizado_em: null,
+          atualizado_por: null,
+          excluido_em: null,
+          excluido_por: null,
+          projetos: { id: 'proj-a', nome: 'Projeto A', ativo: true },
+        },
+      ],
+    });
+
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => {
+        throw new Error('Falha ao gerar arquivo');
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+
+    renderHistoricoPage(client);
+    await waitFor(() => {
+      expect(screen.getByTestId('historico-total')).toHaveTextContent(
+        '01h 00m (1,00h)',
+      );
+    });
+
+    await user.click(screen.getByRole('button', { name: /Exportar CSV/i }));
+    expect(screen.getByText('Falha ao gerar arquivo')).toBeInTheDocument();
+
+    vi.restoreAllMocks();
   });
 });

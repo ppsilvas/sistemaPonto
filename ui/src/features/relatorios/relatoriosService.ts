@@ -23,6 +23,7 @@ export interface RelatorioFiltros {
 export interface RelatorioUsuarioOption {
   id: string;
   nome: string;
+  email?: string | null;
   ativo: boolean;
 }
 
@@ -41,6 +42,7 @@ export interface RegistroPontoRelatorio {
   id: string;
   usuario_id: string;
   usuario_nome: string;
+  usuario_email?: string | null;
   usuario_ativo: boolean;
   projeto_id: string;
   projeto_nome: string;
@@ -113,7 +115,7 @@ export async function listRelatorioFilterOptions(
   client: SupabaseClient,
 ): Promise<RelatorioFilterOptions> {
   const [usuariosRes, projetosRes] = await Promise.all([
-    client.from('usuarios').select('id, nome, ativo').order('nome', { ascending: true }),
+    client.from('usuarios').select('id, nome, email, ativo').order('nome', { ascending: true }),
     client.from('projetos').select('id, nome, ativo').order('nome', { ascending: true }),
   ]);
 
@@ -208,7 +210,7 @@ export async function fetchRelatorioPontos(
   let query = client
     .from('registros_ponto')
     .select(
-      'id, usuario_id, projeto_id, horario_entrada, horario_saida, observacoes, atualizado_em, atualizado_por, excluido_em, excluido_por, usuarios!registros_ponto_usuario_id_fkey(id, nome, ativo), projetos(id, nome, ativo)',
+      'id, usuario_id, projeto_id, horario_entrada, horario_saida, observacoes, atualizado_em, atualizado_por, excluido_em, excluido_por, usuarios!registros_ponto_usuario_id_fkey(id, nome, email, ativo), projetos(id, nome, ativo)',
     )
     .gte('horario_entrada', inicioUtc)
     .lte('horario_entrada', fimUtc)
@@ -285,6 +287,7 @@ export async function fetchRelatorioPontos(
       id: row.id,
       usuario_id: row.usuario_id,
       usuario_nome: usuario?.nome ?? nomeMap.get(row.usuario_id) ?? 'Usuário',
+      usuario_email: usuario?.email ?? null,
       usuario_ativo: usuario?.ativo ?? true,
       projeto_id: row.projeto_id,
       projeto_nome: projeto?.nome ?? 'Projeto',
